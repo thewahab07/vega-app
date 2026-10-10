@@ -642,10 +642,6 @@ const Player = ({route}: Props): React.JSX.Element => {
   const updateContinueWatchingProgress = useContinueWatchingStore(
     state => state.updateProgress,
   );
-  const continueWatchingItems = useContinueWatchingStore(state => state.items);
-  const localVideoAssociations = useLocalVideoStore(
-    state => state.associations,
-  );
   const setLocalVideoAssociation = useLocalVideoStore(
     state => state.setLocalVideo,
   );
@@ -775,9 +771,9 @@ const Player = ({route}: Props): React.JSX.Element => {
       route.params.providerValue,
     ],
   );
-  const localVideoForEpisode = activeEpisodeKey
-    ? localVideoAssociations[activeEpisodeKey]
-    : undefined;
+  const localVideoForEpisode = useLocalVideoStore(state =>
+    activeEpisodeKey ? state.associations[activeEpisodeKey] : undefined,
+  );
 
   // Per-episode choice made on the "play a local file?" prompt.
   //  - pending: waiting for the user, nothing is fetched yet
@@ -864,9 +860,8 @@ const Player = ({route}: Props): React.JSX.Element => {
     resetVideoTracks,
   } = useVideoSettings();
   const isFullScreenRef = useRef(isFullScreen);
-  const syncedContinueWatching = useMemo(
-    () => continueWatchingItems.find(item => item.id === continueWatchingId),
-    [continueWatchingId, continueWatchingItems],
+  const syncedContinueWatching = useContinueWatchingStore(state =>
+    state.items.find(item => item.id === continueWatchingId),
   );
   const syncedEpisodeMatches =
     Boolean(syncedContinueWatching) &&

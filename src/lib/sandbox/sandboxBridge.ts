@@ -5,6 +5,7 @@ import {
   type SandboxMessage,
 } from './protocol';
 import {handleProviderRpc} from './providerRpc';
+import {providerAbortError} from './abort';
 
 /**
  * Native side transport for the provider sandbox.
@@ -17,6 +18,8 @@ import {handleProviderRpc} from './providerRpc';
 type Injector = (script: string) => void;
 
 interface PendingInvoke {
+  controller: AbortController;
+  started: boolean;
   providerValue: string;
   /** Source author of the running code; scopes its storage and cookies. */
   author: string;
@@ -36,6 +39,8 @@ const randomToken = (): string => {
 };
 
 class SandboxBridge {
+  private activeInvokes = 0;
+  private readonly maxActiveInvokes = 2;
   private injector: Injector | null = null;
   private ready = false;
   private readonly queue: HostMessage[] = [];
@@ -58,18 +63,38 @@ class SandboxBridge {
       this.readyTimer = null;
     }
     this.queue.length = 0;
-    for (const [token, entry] of this.pending) {
-      clearTimeout(entry.timer);
-      entry.signal?.removeEventListener?.('abort', entry.onAbort as never);
-      entry.reject(new Error('Provider sandbox was torn down'));
-      this.pending.delete(token);
+    for (const token of Array.from(this.pending.keys())) {
+      this.settle(token, new Error('Provider sandbox was torn down'));
     }
   }
 
   private post(message: HostMessage): void {
+    const invocation =
+      message.type === 'invoke' ? this.pending.get(message.token) : undefined;
+    if (message.type === 'invoke' && !invocation) return;
+    if (invocation && this.activeInvokes >= this.maxActiveInvokes) {
+      this.queue.push(message);
+      return;
+    }
     if (!this.injector || !this.ready) {
       this.queue.push(message);
       return;
+    }
+    if (invocation) {
+      invocation.started = true;
+      this.activeInvokes++;
+      clearTimeout(invocation.timer);
+      invocation.timer = setTimeout(() => {
+        // Block admission before settling: settle flushes queued invokes,
+        // but a timed-out host is about to be reloaded.
+        this.ready = false;
+        this.settle(
+          message.token,
+          new Error(`Provider ${invocation.providerValue} timed out`),
+        );
+        this.handleReload();
+        this.reloadRequester?.();
+      }, SANDBOX_INVOKE_TIMEOUT_MS + 5_000);
     }
     // The frame goes in as a JSON-quoted string literal: JSON.stringify
     // escapes quotes and backslashes, so provider data cannot break out of
@@ -123,6 +148,12 @@ class SandboxBridge {
       return;
     }
     this.pending.delete(token);
+    entry.controller.abort();
+    if (entry.started) this.activeInvokes--;
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      const queued = this.queue[i];
+      if ('token' in queued && queued.token === token) this.queue.splice(i, 1);
+    }
     clearTimeout(entry.timer);
     if (entry.onAbort && entry.signal) {
       entry.signal.removeEventListener('abort', entry.onAbort);
@@ -132,6 +163,7 @@ class SandboxBridge {
     } else {
       entry.resolve(result);
     }
+    this.flush();
   }
 
   /** WebView `onMessage` handler. */
@@ -174,8 +206,10 @@ class SandboxBridge {
           entry.author,
           message.operation,
           message.args,
+          entry.controller.signal,
         )
           .then(result => {
+            if (this.pending.get(message.token) !== entry) return;
             this.post({
               type: 'rpc-result',
               token: message.token,
@@ -184,6 +218,7 @@ class SandboxBridge {
             });
           })
           .catch(error => {
+            if (this.pending.get(message.token) !== entry) return;
             this.post({
               type: 'rpc-result',
               token: message.token,
@@ -224,26 +259,31 @@ class SandboxBridge {
       return Promise.reject(new Error('Provider module is too large'));
     }
     if (signal?.aborted) {
-      return Promise.reject(new Error('Provider request aborted'));
+      return Promise.reject(providerAbortError());
     }
+    if (this.pending.size >= 64)
+      return Promise.reject(new Error('Too many queued provider requests'));
 
     const token = randomToken();
 
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        // The document normally terminates the worker itself; if the whole
-        // WebView is wedged, reload it so later calls are not stuck forever.
-        this.settle(token, new Error(`Provider ${providerValue} timed out`));
-        this.reloadRequester?.();
-      }, SANDBOX_INVOKE_TIMEOUT_MS + 5_000);
+        this.settle(
+          token,
+          new Error(`Provider ${providerValue} queue wait timed out`),
+        );
+      }, 60_000);
 
       const onAbort = () => {
-        this.post({type: 'cancel', token});
-        this.settle(token, new Error('Provider request aborted'));
+        if (this.pending.get(token)?.started)
+          this.post({type: 'cancel', token});
+        this.settle(token, providerAbortError());
       };
       signal?.addEventListener('abort', onAbort, {once: true});
 
       this.pending.set(token, {
+        controller: new AbortController(),
+        started: false,
         providerValue,
         author,
         resolve: resolve as (value: unknown) => void,
@@ -268,6 +308,10 @@ class SandboxBridge {
   /** Called by the host component when the WebView reloads. */
   handleReload(): void {
     this.ready = false;
+    this.queue.length = 0;
+    for (const token of Array.from(this.pending.keys())) {
+      this.settle(token, new Error('Provider sandbox reloaded'));
+    }
     this.startReadyTimer();
   }
 }

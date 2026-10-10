@@ -71,6 +71,9 @@ yarn-error.log
 # testing
 /coverage
 
+# Local performance captures, build logs and test APKs
+/performance-captures/
+
 # Yarn
 .yarn/*
 !.yarn/patches

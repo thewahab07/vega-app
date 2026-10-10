@@ -55,13 +55,17 @@ export const __resetTVFocusTracking = () => {
 };
 
 /** useIsFocused that also works outside a navigator (tab bar, modals). */
-export const useSafeIsNavFocused = (): boolean => {
+const useTVIsNavFocused = (): boolean => {
   try {
     return useIsFocused();
   } catch {
     return true;
   }
 };
+
+export const useSafeIsNavFocused = isTV
+  ? useTVIsNavFocused
+  : (): boolean => true;
 
 interface Options {
   ref: React.RefObject<any>;
@@ -80,7 +84,7 @@ interface Options {
  * - An element focused when its screen lost navigation focus takes focus back
  *   when the screen is shown again.
  */
-export const useTVNavFocusMemory = ({
+const useTVFocusMemory = ({
   ref,
   isNavFocused,
   hasTVPreferredFocus,
@@ -179,3 +183,13 @@ export const useTVNavFocusMemory = ({
 
   return {preferredFocus: preferredRef.current, onFocus, onBlur};
 };
+
+const noMobileFocus = () => {};
+const mobileFocusMemory = {
+  preferredFocus: false,
+  onFocus: noMobileFocus,
+  onBlur: noMobileFocus,
+};
+export const useTVNavFocusMemory = isTV
+  ? useTVFocusMemory
+  : (_options: Options) => mobileFocusMemory;

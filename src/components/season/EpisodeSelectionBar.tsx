@@ -14,6 +14,7 @@ interface EpisodeSelectionBarProps {
   onExit: () => void;
   onToggleSelectAll: () => void;
   onCopyLinks: () => void;
+  onDownload?: () => void;
   onCancelCopy: () => void;
 }
 
@@ -33,6 +34,7 @@ export const EpisodeSelectionBar: React.FC<EpisodeSelectionBarProps> = ({
   onExit,
   onToggleSelectAll,
   onCopyLinks,
+  onDownload,
   onCancelCopy,
 }) => {
   const colors = useM3Colors();
@@ -93,11 +95,18 @@ export const EpisodeSelectionBar: React.FC<EpisodeSelectionBarProps> = ({
         <View style={{alignItems: 'center', flexDirection: 'row', gap: 10}}>
           <ActivityIndicator size="small" color={colors.primary} />
           <Text style={{color: colors.onSurfaceVariant, flex: 1}}>
-            Getting links {progress.current}/{progress.total}
+            {progress.action === 'download'
+              ? 'Starting downloads '
+              : 'Getting links '}
+            {progress.current}/{progress.total}
           </Text>
           <TVFocusable
             accessibilityRole="button"
-            accessibilityLabel="Cancel getting links"
+            accessibilityLabel={
+              progress.action === 'download'
+                ? 'Cancel starting downloads'
+                : 'Cancel getting links'
+            }
             onPress={onCancelCopy}
             borderRadius={18}
             focusScale={1.03}
@@ -116,36 +125,72 @@ export const EpisodeSelectionBar: React.FC<EpisodeSelectionBarProps> = ({
           </TVFocusable>
         </View>
       ) : (
-        <TVFocusable
-          accessibilityRole="button"
-          accessibilityLabel="Copy links"
-          accessibilityState={{disabled: !canCopy}}
-          onPress={onCopyLinks}
-          disabled={!canCopy}
-          borderRadius={18}
-          focusScale={1.02}
-          focusBorderColor={focusBorderColor}
-          style={{
-            alignItems: 'center',
-            backgroundColor: colors.primaryContainer,
-            borderRadius: 18,
-            flexDirection: 'row',
-            gap: 8,
-            height: 44,
-            justifyContent: 'center',
-            opacity: canCopy ? 1 : 0.5,
-          }}>
-          <MaterialCommunityIcons
-            name="content-copy"
-            size={20}
-            color={colors.onPrimaryContainer}
-          />
-          <Text
-            role="labelLargeEmphasized"
-            style={{color: colors.onPrimaryContainer}}>
-            Copy links
-          </Text>
-        </TVFocusable>
+        <View style={{flexDirection: 'row', gap: 8}}>
+          <TVFocusable
+            accessibilityRole="button"
+            accessibilityLabel="Copy links"
+            accessibilityState={{disabled: !canCopy}}
+            onPress={onCopyLinks}
+            disabled={!canCopy}
+            borderRadius={18}
+            focusScale={1.02}
+            focusBorderColor={focusBorderColor}
+            style={{
+              alignItems: 'center',
+              flex: 1,
+              backgroundColor: colors.primaryContainer,
+              borderRadius: 18,
+              flexDirection: 'row',
+              gap: 8,
+              height: 44,
+              justifyContent: 'center',
+              opacity: canCopy ? 1 : 0.5,
+            }}>
+            <MaterialCommunityIcons
+              name="content-copy"
+              size={20}
+              color={colors.onPrimaryContainer}
+            />
+            <Text
+              role="labelLargeEmphasized"
+              style={{color: colors.onPrimaryContainer}}>
+              Copy links
+            </Text>
+          </TVFocusable>
+          {onDownload && (
+            <TVFocusable
+              accessibilityRole="button"
+              accessibilityLabel="Download selected episodes"
+              accessibilityState={{disabled: !canCopy}}
+              disabled={!canCopy}
+              onPress={onDownload}
+              borderRadius={18}
+              focusScale={1.02}
+              focusBorderColor={focusBorderColor}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 8,
+                height: 44,
+                borderRadius: 18,
+                backgroundColor: colors.primaryContainer,
+                opacity: canCopy ? 1 : 0.5,
+              }}>
+              <MaterialCommunityIcons
+                name="download"
+                size={20}
+                color={colors.onPrimaryContainer}
+              />
+              <Text
+                role="labelLargeEmphasized"
+                style={{color: colors.onPrimaryContainer}}>
+                Download
+              </Text>
+            </TVFocusable>
+          )}
+        </View>
       )}
     </View>
   );

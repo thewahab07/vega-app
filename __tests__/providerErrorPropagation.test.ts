@@ -1,5 +1,19 @@
 import {beforeEach, describe, expect, it, jest} from '@jest/globals';
 
+jest.mock('react-native-mmkv-storage', () => ({
+  MMKVLoader: class {
+    withInstanceID() {
+      return this;
+    }
+    withEncryption() {
+      return this;
+    }
+    initialize() {
+      return {getString: jest.fn(), getBool: jest.fn(), getInt: jest.fn()};
+    }
+  },
+}));
+
 jest.mock('react-native', () => ({
   ToastAndroid: {LONG: 1, show: jest.fn()},
 }));

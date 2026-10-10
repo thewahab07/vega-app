@@ -44,9 +44,12 @@ import useTVNavigationStore, {
   selectRailFocusHandle,
 } from '../../lib/zustand/tvNavigationStore';
 
+const useRailFocusHandle = isTV
+  ? () => useTVNavigationStore(selectRailFocusHandle)
+  : () => null;
+
 const StreamingTabButton = ({
   routeKey,
-  routeName,
   isFocused,
   label,
   icon,
@@ -58,7 +61,7 @@ const StreamingTabButton = ({
   onLongPress,
 }: TabButtonProps) => {
   const focusBorderColor = useTVFocusBorderColor();
-  const railFocusHandle = useTVNavigationStore(selectRailFocusHandle);
+  const railFocusHandle = useRailFocusHandle();
   const tabRef = React.useRef<View>(null);
   const [tabHandle, setTabHandle] = useState<number | null>(null);
 
@@ -123,10 +126,15 @@ const StreamingTabButton = ({
             </View>
             {showLabels ? (
               <AppText
-                role={isFocused || focused ? 'labelMediumEmphasized' : 'labelMedium'}
+                role={
+                  isFocused || focused ? 'labelMediumEmphasized' : 'labelMedium'
+                }
                 numberOfLines={1}
                 style={{
-                  color: isFocused || focused ? colors.onSurface : colors.onSurfaceVariant,
+                  color:
+                    isFocused || focused
+                      ? colors.onSurface
+                      : colors.onSurfaceVariant,
                   marginTop: 4,
                   textAlign: 'center',
                   fontWeight: focused ? '700' : isFocused ? '600' : '400',
@@ -180,9 +188,7 @@ const StreamingTabButton = ({
           name={icon}
           active={isFocused}
           color={
-            isFocused
-              ? colors.onSecondaryContainer
-              : colors.onSurfaceVariant
+            isFocused ? colors.onSecondaryContainer : colors.onSurfaceVariant
           }
           size={24}
         />
@@ -218,7 +224,7 @@ const StreamingTabBar = ({
   const activeTabKey = state.routes[state.index]?.key ?? null;
 
   React.useLayoutEffect(() => {
-    useTVNavigationStore.getState().setActiveTabKey(activeTabKey);
+    if (isTV) useTVNavigationStore.getState().setActiveTabKey(activeTabKey);
   }, [activeTabKey]);
 
   return (

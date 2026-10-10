@@ -7,6 +7,7 @@ jest.mock('react-native', () => ({
   NativeModules: {
     ProviderHttpModule: {
       fetch: (url: string, options: any) => mockNativeFetch(url, options),
+      cancel: (id: string) => mockNativeCancel(id),
     },
   },
 }));
@@ -16,6 +17,8 @@ jest.mock('../src/lib/sandbox/rateLimiter', () => ({
     acquire: jest.fn(async () => jest.fn()),
   },
 }));
+
+const mockNativeCancel = jest.fn();
 
 const mockStorageMap = new Map<string, unknown>();
 
@@ -80,6 +83,23 @@ describe('providerFetch redirects (android)', () => {
   beforeEach(() => {
     mockStorageMap.clear();
     mockNativeFetch.mockReset();
+    mockNativeCancel.mockReset();
+  });
+
+  it('cancels the native call and ignores its late redirect and cookies', async () => {
+    let resolve!: (value: unknown) => void;
+    mockNativeFetch.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const controller = new AbortController();
+    const request = providerFetch('alice', 'https://a.example/', getRequest, controller.signal);
+    const rejection = expect(request).rejects.toMatchObject({name: 'AbortError'});
+    await Promise.resolve(); await Promise.resolve();
+    const id = calledOptions(0).requestId;
+    controller.abort();
+    expect(mockNativeCancel).toHaveBeenCalledWith(id);
+    resolve({...redirectTo('https://a.example/', 'https://cdn.example/'), cookies: [['https://a.example/', 'session=obsolete']]});
+    await rejection;
+    expect(calledUrls()).toEqual(['https://a.example/']);
+    expect(mockStorageMap.size).toBe(0);
   });
 
   it('never lets native follow redirects itself', async () => {

@@ -1,8 +1,15 @@
+import {useStagedHomeRows} from '../../lib/hooks/useStagedHomeRows';
+import {scheduleWhenIdle} from '../../lib/performance/idleWork';
+import {type ProviderExtension} from '../../lib/storage/extensionStorage';
+import {
+  beginUIInteraction,
+  endUIInteraction,
+} from '../../lib/performance/idleWork';
 import {RefreshControl, View, Modal, Pressable} from 'react-native';
 import {FlashList} from '@shopify/flash-list';
 import Slider from '../../components/Slider';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {useFocusEffect} from '@react-navigation/native';
+import {useFocusEffect, useIsFocused} from '@react-navigation/native';
 import HeroOptimized from '../../components/Hero';
 import {mainStorage} from '../../lib/storage';
 import useContentStore from '../../lib/zustand/contentStore';
@@ -18,8 +25,7 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {HomeStackParamList} from '../../App';
 import {Drawer} from 'react-native-drawer-layout';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
-import {providerManager} from '../../lib/services/ProviderManager';
-import {Catalog, Post} from '../../lib/providers/types';
+import {Post} from '../../lib/providers/types';
 import Tutorial from '../../components/Touturial';
 import {QueryErrorBoundary} from '../../components/ErrorBoundary';
 import {StatusBar} from 'expo-status-bar';
@@ -38,26 +44,32 @@ type HomeRow = {
   title: string;
   filter: string;
   posts: Post[];
+  error?: string;
+  deferPosts?: boolean;
 };
 
 const EMPTY_POSTS: Post[] = [];
 
 const homeRowKey = (row: HomeRow) => row.key;
 
-// One item type per row. A row is then never recycled into a different
-// catalog, so each row keeps its own horizontal scroll position and focus.
-const homeRowType = (row: HomeRow) => row.key;
+// Phones share structural recycling types; TV retains its focus/scroll policy.
+const homeRowType = (row: HomeRow) =>
+  isTV ? row.key : row.isLoading ? 'loading' : 'catalog';
 
 // TV focus can only move to rows that are mounted. Keep about two rows ahead
 // ready so fast D-pad presses do not run past the rendered content.
-const HOME_DRAW_DISTANCE = isTV ? 800 : 400;
+const HOME_DRAW_DISTANCE = isTV ? 800 : 250;
 
 const Home = ({}: Props) => {
   const colors = useM3Colors();
+  const isFocused = useIsFocused();
   const [statusBarScrimVisible, setStatusBarScrimVisible] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // Keep Home controls/hero paused until the closing slide completes.
+  const [drawerSceneActive, setDrawerSceneActive] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [isAtTop, setIsAtTop] = useState(true);
+  const [heroVisible, setHeroVisible] = useState(true);
   const showContinueWatching = useNavigationPreferencesStore(
     state => state.showContinueWatching,
   );
@@ -69,6 +81,23 @@ const Home = ({}: Props) => {
   );
 
   const provider = useContentStore(state => state.provider);
+  const pendingProvider = React.useRef<ProviderExtension | null>(null);
+  const selectProvider = useCallback((item: ProviderExtension) => {
+    pendingProvider.current = item;
+    setIsDrawerOpen(false);
+  }, []);
+  const finishDrawerTransition = useCallback((closing: boolean) => {
+    endUIInteraction('home-drawer');
+    if (closing) {
+      setIsDrawerOpen(false);
+      setDrawerSceneActive(false);
+    }
+    if (closing && pendingProvider.current) {
+      const selected = pendingProvider.current;
+      pendingProvider.current = null;
+      useContentStore.getState().setProvider(selected);
+    }
+  }, []);
   const installedProviders = useContentStore(state => state.installedProviders);
   const setHeroes = useHeroStore(state => state.setHeroes);
 
@@ -76,20 +105,33 @@ const Home = ({}: Props) => {
   const {
     data: homeData = [],
     isLoading,
+    catalog: skeletonCatalog,
     error,
     refetch,
-    isRefetching,
     // isStale,
   } = useHomePageData({
     provider,
     enabled: !!(installedProviders?.length && provider?.value),
   });
 
+  useEffect(
+    () => () => {
+      [
+        'home-scroll',
+        'home-momentum',
+        'home-drawer',
+        'home-drawer-gesture',
+      ].forEach(endUIInteraction);
+    },
+    [],
+  );
+
   // Memoized scroll handler
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent?.contentOffset?.y ?? 0;
     setStatusBarScrimVisible(offsetY > 12);
     setIsAtTop(offsetY <= 0);
+    setHeroVisible(offsetY < 410);
   }, []);
 
   // Heroes are kept per provider, so a refetch does not pick new ones.
@@ -104,9 +146,7 @@ const Home = ({}: Props) => {
 
   useFocusEffect(
     useCallback(() => {
-      syncFromSharedFolder().catch(e =>
-        console.warn('[VegaSync] Home focus sync failed:', e),
-      );
+      return scheduleWhenIdle(() => syncFromSharedFolder());
     }, []),
   );
 
@@ -137,33 +177,7 @@ const Home = ({}: Props) => {
           setManualRefreshing(false);
         }, 50);
       });
-  }, [refetch, provider?.value]);
-
-  // Catalog now runs in the provider sandbox, so it resolves asynchronously.
-  const [skeletonCatalog, setSkeletonCatalog] = useState<Catalog[]>([]);
-
-  useEffect(() => {
-    if (!provider?.value) {
-      setSkeletonCatalog([]);
-      return;
-    }
-    let cancelled = false;
-    providerManager
-      .getCatalog({providerValue: provider.value})
-      .then(catalog => {
-        if (!cancelled) {
-          setSkeletonCatalog(catalog);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSkeletonCatalog([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [provider?.value]);
+  }, [refetch, provider.value]);
 
   // Rows of the vertical list. The list mounts only the rows near the screen,
   // so opening Home no longer builds every catalog row and its posters at once.
@@ -171,22 +185,42 @@ const Home = ({}: Props) => {
     () =>
       isLoading
         ? skeletonCatalog.map((item, index) => ({
-            key: `loading-${item.filter}-${index}`,
+            key: JSON.stringify([
+              provider.source?.author,
+              provider.value,
+              item.filter,
+              index,
+            ]),
             isLoading: true,
             title: item.title,
             filter: item.filter,
             posts: EMPTY_POSTS,
           }))
         : homeData.map((item, index) => ({
-            key: `content-${item.filter}-${index}`,
-            isLoading: false,
+            key: JSON.stringify([
+              provider.source?.author,
+              provider.value,
+              item.filter,
+              index,
+            ]),
+            isLoading: !!item.isLoading,
             title: item.title,
             filter: item.filter,
             posts: item.Posts,
+            error: item.error,
           })),
-    [isLoading, skeletonCatalog, homeData],
+    [
+      isLoading,
+      skeletonCatalog,
+      homeData,
+      provider.value,
+      provider.source?.author,
+    ],
   );
 
+  const staged = useStagedHomeRows(rows, JSON.stringify([
+    provider.source?.author, provider.source?.url, provider.value, provider.version,
+  ]), !isTV, isFocused);
   const providerValue = provider?.value;
   const renderRow = useCallback(
     ({item}: {item: HomeRow}) => (
@@ -195,13 +229,27 @@ const Home = ({}: Props) => {
         title={item.title}
         posts={item.posts}
         filter={item.filter}
-        providerValue={item.isLoading ? undefined : providerValue}
+        providerValue={providerValue}
+        scrollKey={item.key}
+        error={item.error}
+        deferPosts={item.deferPosts}
       />
     ),
     [providerValue],
   );
 
-  const openDrawer = useCallback(() => setIsDrawerOpen(true), []);
+  const openDrawer = useCallback(() => {
+    setDrawerSceneActive(true);
+    setIsDrawerOpen(true);
+  }, []);
+  const closeDrawer = useCallback(() => setIsDrawerOpen(false), []);
+  const acknowledgeNativeClose = useCallback(() => {
+    // The library already animates overlay/gesture closes on the UI thread.
+    // Commit controlled state in finishDrawerTransition, after that slide.
+  }, []);
+  const startDrawerTransition = useCallback(() => beginUIInteraction('home-drawer'), []);
+  const startDrawerGesture = useCallback(() => beginUIInteraction('home-drawer-gesture'), []);
+  const endDrawerGesture = useCallback(() => endUIInteraction('home-drawer-gesture'), []);
 
   // Memoized error message - only show if there is no cached data and an error occurred
   const errorComponent = useMemo(() => {
@@ -241,12 +289,13 @@ const Home = ({}: Props) => {
         <View className="flex-1 bg-m3-background">
           <Drawer
             open={!isTV && isDrawerOpen}
-            onOpen={() => {
-              if (!isTV) setIsDrawerOpen(true);
-            }}
-            onClose={() => {
-              if (!isTV) setIsDrawerOpen(false);
-            }}
+            onOpen={openDrawer}
+            onClose={acknowledgeNativeClose}
+            onTransitionStart={startDrawerTransition}
+            onTransitionEnd={finishDrawerTransition}
+            onGestureStart={startDrawerGesture}
+            onGestureEnd={endDrawerGesture}
+            onGestureCancel={endDrawerGesture}
             drawerPosition="left"
             drawerType="front"
             drawerStyle={{width: 200, backgroundColor: 'transparent'}}
@@ -256,18 +305,25 @@ const Home = ({}: Props) => {
               !disableDrawer && !isTV ? (
                 <ProviderDrawer
                   isOpen={isDrawerOpen}
-                  onClose={() => setIsDrawerOpen(false)}
+                  onSelectProvider={selectProvider}
+                  onClose={closeDrawer}
                 />
               ) : null
             }>
             <StatusBar style="light" />
 
             <FlashList
-              data={rows}
+              data={staged.rows}
+              onViewableItemsChanged={staged.onViewableItemsChanged}
               renderItem={renderRow}
               keyExtractor={homeRowKey}
               getItemType={homeRowType}
               drawDistance={HOME_DRAW_DISTANCE}
+              maxItemsInRecyclePool={isTV ? undefined : 4}
+              onScrollBeginDrag={() => beginUIInteraction('home-scroll')}
+              onScrollEndDrag={() => endUIInteraction('home-scroll')}
+              onMomentumScrollBegin={() => beginUIInteraction('home-momentum')}
+              onMomentumScrollEnd={() => endUIInteraction('home-momentum')}
               onScroll={handleScroll}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
@@ -286,7 +342,8 @@ const Home = ({}: Props) => {
               ListHeaderComponent={
                 <>
                   <HeroOptimized
-                    isDrawerOpen={isDrawerOpen}
+                    isDrawerOpen={isTV ? isDrawerOpen : drawerSceneActive}
+                    isVisible={heroVisible}
                     onOpenDrawer={openDrawer}
                   />
                   {showContinueWatching && <ContinueWatching />}
@@ -308,8 +365,18 @@ const Home = ({}: Props) => {
               animationType="fade"
               statusBarTranslucent
               onRequestClose={() => setIsDrawerOpen(false)}>
-              <View style={{flex: 1, flexDirection: 'row', backgroundColor: 'rgba(0, 0, 0, 0.72)'}}>
-                <View style={{width: 340, height: '100%', backgroundColor: '#121214'}}>
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                }}>
+                <View
+                  style={{
+                    width: 340,
+                    height: '100%',
+                    backgroundColor: '#121214',
+                  }}>
                   <ProviderDrawer onClose={() => setIsDrawerOpen(false)} />
                 </View>
                 <Pressable

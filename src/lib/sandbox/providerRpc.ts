@@ -4,6 +4,7 @@ import {openWebView} from '../services/wafResolver';
 import type {OpenWebViewOptions, OpenWebViewResult} from '../providers/types';
 import {bytesToBase64} from './base64';
 import {providerFetch} from './providerFetch';
+import {throwIfProviderAborted} from './abort';
 import {getJarCookieMap} from './providerCookieJar';
 import type {RpcOperation, SerializedRequest} from './protocol';
 import {validateProviderUrl} from './urlGuard';
@@ -18,7 +19,11 @@ const MAX_KV_KEY_LENGTH = 256;
 const MAX_KV_VALUE_BYTES = 1_000_000;
 
 const validateKvKey = (key: unknown): string => {
-  if (typeof key !== 'string' || !key.trim() || key.length > MAX_KV_KEY_LENGTH) {
+  if (
+    typeof key !== 'string' ||
+    !key.trim() ||
+    key.length > MAX_KV_KEY_LENGTH
+  ) {
     throw new Error(
       `Invalid KV key: must be a non-empty string <= ${MAX_KV_KEY_LENGTH} characters`,
     );
@@ -162,7 +167,9 @@ export const handleProviderRpc = async (
   author: string,
   operation: RpcOperation,
   args: any,
+  signal?: AbortSignal,
 ): Promise<unknown> => {
+  throwIfProviderAborted(signal);
   switch (operation) {
     case 'fetch':
       return providerFetch(
@@ -172,6 +179,7 @@ export const handleProviderRpc = async (
           headers: [],
           body: {kind: 'none'},
         }) as SerializedRequest,
+        signal,
       );
 
     case 'getBaseUrl':

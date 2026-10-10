@@ -293,15 +293,11 @@ export const downloadOutputExists = async (
   if (filePath.startsWith('content://')) {
     try {
       const nativeSize = await getSafCopyModule()?.getUriSize?.(filePath);
-      if (typeof nativeSize === 'number') {
-        return nativeSize >= 0;
-      }
+      if (typeof nativeSize === 'number' && nativeSize >= 0) return true;
     } catch {
-      return false;
+      // Size failures do not prove a document is missing. Try metadata.
     }
-    return FileSystem.getInfoAsync(filePath)
-      .then(info => info.exists)
-      .catch(() => false);
+    return FileSystem.getInfoAsync(filePath).then(info => info.exists);
   }
-  return RNFS.exists(filePath.replace(/^file:\/\//, '')).catch(() => false);
+  return RNFS.exists(filePath.replace(/^file:\/\//, ''));
 };

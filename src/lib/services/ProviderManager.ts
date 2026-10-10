@@ -1,7 +1,15 @@
+import {throwIfProviderAborted} from '../sandbox/abort';
 import {ToastAndroid} from 'react-native';
 import axios from 'axios';
 import {headers as commonHeaders} from '../providers/headers';
-import {Catalog, EpisodeLink, Info, Post, Stream, SettingsField} from '../providers/types';
+import {
+  Catalog,
+  EpisodeLink,
+  Info,
+  Post,
+  Stream,
+  SettingsField,
+} from '../providers/types';
 import {extensionManager} from './ExtensionManager';
 import {extensionStorage} from '../storage/extensionStorage';
 import {providerKvStorage} from '../storage/StorageService';
@@ -118,7 +126,9 @@ export class ProviderManager {
       // commonHeaders is passed per invoke because it is platform dependent and
       // the sandbox realm cannot read Platform itself.
       args: {...args, commonHeaders},
-      state: this.getProviderState(providerScopeId(module.author, providerValue)),
+      state: this.getProviderState(
+        providerScopeId(module.author, providerValue),
+      ),
       signal,
     });
   }
@@ -143,6 +153,7 @@ export class ProviderManager {
     providerValue: string;
     signal?: AbortSignal;
   }): Promise<Catalog[]> => {
+    throwIfProviderAborted(signal);
     const catalogModule = this.getModule(providerValue, 'catalog');
     if (!catalogModule) {
       return [];
@@ -190,11 +201,7 @@ export class ProviderManager {
       if (typeof genres === 'function') {
         genres = await (genres as any)();
       }
-      return this.requireArray<Catalog>(
-        genres ?? [],
-        providerValue,
-        'genres',
-      );
+      return this.requireArray<Catalog>(genres ?? [], providerValue, 'genres');
     } catch (error) {
       console.error('Error loading genres:', error);
       throw new Error(
@@ -216,6 +223,7 @@ export class ProviderManager {
     providerValue: string;
     signal: AbortSignal;
   }): Promise<Post[]> => {
+    throwIfProviderAborted(signal);
     const getPostsModule = this.getModule(providerValue, 'posts');
     if (!getPostsModule) {
       throw new Error(`No posts module found for provider: ${providerValue}`);
@@ -230,6 +238,7 @@ export class ProviderManager {
       );
       return this.requireArray<Post>(posts, providerValue, 'getPosts');
     } catch (error) {
+      throwIfProviderAborted(signal);
       if (!signal.aborted) {
         console.error('Error in posts function:', error);
       }
@@ -252,6 +261,7 @@ export class ProviderManager {
     providerValue: string;
     signal: AbortSignal;
   }): Promise<Post[]> => {
+    throwIfProviderAborted(signal);
     const getPostsModule = this.getModule(providerValue, 'posts');
     if (!getPostsModule) {
       throw new Error(`No posts module found for provider: ${providerValue}`);
@@ -266,6 +276,7 @@ export class ProviderManager {
       );
       return this.requireArray<Post>(posts, providerValue, 'getSearchPosts');
     } catch (error) {
+      throwIfProviderAborted(signal);
       console.error('Error in search posts function:', error);
       throw new Error(
         getErrorMessage(
@@ -284,6 +295,7 @@ export class ProviderManager {
     provider: string;
     signal?: AbortSignal;
   }): Promise<Info> => {
+    throwIfProviderAborted(signal);
     const getMetaDataModule = this.getModule(provider, 'meta');
     if (!getMetaDataModule) {
       throw new Error(`No meta data module found for provider: ${provider}`);
@@ -324,6 +336,7 @@ export class ProviderManager {
     providerValue: string;
     isDownload?: boolean;
   }): Promise<Stream[]> => {
+    throwIfProviderAborted(signal);
     const getStreamModule = this.getModule(providerValue, 'stream');
     if (!getStreamModule) {
       throw new Error(`No stream module found for provider: ${providerValue}`);
@@ -374,7 +387,9 @@ export class ProviderManager {
         return stream;
       }
       const cookie = getJarCookieHeader(author, stream.link);
-      return cookie ? {...stream, headers: {...headers, Cookie: cookie}} : stream;
+      return cookie
+        ? {...stream, headers: {...headers, Cookie: cookie}}
+        : stream;
     });
   }
 
@@ -387,6 +402,7 @@ export class ProviderManager {
     providerValue: string;
     signal?: AbortSignal;
   }): Promise<EpisodeLink[]> => {
+    throwIfProviderAborted(signal);
     const getEpisodeLinksModule = this.getModule(providerValue, 'episodes');
     if (!getEpisodeLinksModule) {
       throw new Error(
@@ -504,7 +520,10 @@ export class ProviderManager {
       }
       return parsed;
     } catch (error) {
-      console.warn(`Provider ${providerValue} getSettingsSchema failed:`, error);
+      console.warn(
+        `Provider ${providerValue} getSettingsSchema failed:`,
+        error,
+      );
       return [];
     }
   };

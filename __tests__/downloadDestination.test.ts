@@ -340,13 +340,29 @@ describe('download destination service', () => {
     expect(mockSafDirectories.has(showUri)).toBe(false);
   });
 
-  it('treats an inaccessible stale SAF URI as already deleted', async () => {
+  it('falls back to metadata when native size fails for an existing document', async () => {
+    const native = require('react-native').NativeModules.SafCopyModule;
+    const spy = jest.spyOn(native, 'getUriSize').mockRejectedValueOnce(new Error('Size unavailable'));
+    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValueOnce({exists: true});
+    await expect(downloadOutputExists('content://downloads/present.mp4')).resolves.toBe(true);
+    spy.mockRestore();
+  });
+
+  it('does not turn two failed access checks into a missing result', async () => {
+    const native = require('react-native').NativeModules.SafCopyModule;
+    const spy = jest.spyOn(native, 'getUriSize').mockRejectedValueOnce(new Error('Permission denied'));
+    (FileSystem.getInfoAsync as jest.Mock).mockRejectedValueOnce(new Error('Permission denied'));
+    await expect(downloadOutputExists('content://downloads/present.mp4')).rejects.toThrow('Permission denied');
+    spy.mockRestore();
+  });
+
+  it('allows deletion but preserves uncertainty when stale SAF metadata cannot be read', async () => {
     const fileUri = 'content://downloads/missing.mp4';
     const getInfoAsync = FileSystem.getInfoAsync as jest.Mock;
     getInfoAsync.mockRejectedValueOnce(new Error('Document no longer exists'));
 
     await expect(deleteDownloadOutput(fileUri)).resolves.toBe(true);
-    await expect(downloadOutputExists(fileUri)).resolves.toBe(false);
+    await expect(downloadOutputExists(fileUri)).rejects.toThrow('Document no longer exists');
   });
 
   it('succeeds when the deleted file parent tree is inaccessible', async () => {

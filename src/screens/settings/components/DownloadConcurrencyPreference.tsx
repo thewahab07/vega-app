@@ -1,21 +1,22 @@
-import { Host, Slider } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth } from '@expo/ui/jetpack-compose/modifiers';
-import React, { useCallback, useRef, useState } from 'react';
-import { View, findNodeHandle } from 'react-native';
+import {registerInteractionCommit} from '../../../lib/performance/idleWork';
+import {Host, Slider} from '@expo/ui/jetpack-compose';
+import {fillMaxWidth} from '@expo/ui/jetpack-compose/modifiers';
+import React, {useCallback, useRef, useState} from 'react';
+import {View, findNodeHandle} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Surface from '../../../components/ui/Surface';
 import AppText from '../../../components/ui/Text';
-import { updateDownloadConcurrency } from '../../../lib/downloadManager';
+import {updateDownloadConcurrency} from '../../../lib/downloadManager';
 import {
   MAX_DOWNLOAD_CONNECTIONS,
   MIN_DOWNLOAD_CONNECTIONS,
   settingsStorage,
 } from '../../../lib/storage';
 import SettingsSliderRow from '../../../components/ui/SettingsSliderRow';
-import { useM3Colors, useM3HostTheme } from '../../../theme/M3PaletteContext';
-import { isTV } from '../../../lib/tv';
-import { TVFocusable } from '../../../components/tv/TVFocusable';
+import {useM3Colors, useM3HostTheme} from '../../../theme/M3PaletteContext';
+import {isTV} from '../../../lib/tv';
+import {TVFocusable} from '../../../components/tv/TVFocusable';
 
 const MIN_CONCURRENCY = 1;
 const MAX_CONCURRENCY = 5;
@@ -39,23 +40,38 @@ const DownloadConcurrencyPreference = ({
   const [decreaseHandle, setDecreaseHandle] = useState<number | null>(null);
   const [increaseHandle, setIncreaseHandle] = useState<number | null>(null);
 
-  const update = useCallback((next: number) => {
-    const rounded = Math.min(
-      Math.max(Math.round(next), MIN_CONCURRENCY),
-      MAX_CONCURRENCY,
-    );
-    if (rounded !== prevConcurrencyRef.current) {
-      prevConcurrencyRef.current = rounded;
-      if (settingsStorage.isHapticFeedbackEnabled()) {
-        ReactNativeHapticFeedback.trigger('effectTick', {
-          enableVibrateFallback: true,
-          ignoreAndroidSystemSettings: false,
-        });
-      }
-    }
-    setConcurrency(rounded);
-    updateDownloadConcurrency(rounded);
+  const dirtyRef = useRef(false);
+  const commitConcurrency = useCallback(() => {
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    updateDownloadConcurrency(prevConcurrencyRef.current);
   }, []);
+  React.useEffect(
+    () => registerInteractionCommit(commitConcurrency),
+    [commitConcurrency],
+  );
+  const update = useCallback(
+    (next: number) => {
+      const rounded = Math.min(
+        Math.max(Math.round(next), MIN_CONCURRENCY),
+        MAX_CONCURRENCY,
+      );
+      if (rounded === prevConcurrencyRef.current) return;
+      dirtyRef.current = true;
+      if (rounded !== prevConcurrencyRef.current) {
+        prevConcurrencyRef.current = rounded;
+        if (settingsStorage.isHapticFeedbackEnabled()) {
+          ReactNativeHapticFeedback.trigger('effectTick', {
+            enableVibrateFallback: true,
+            ignoreAndroidSystemSettings: false,
+          });
+        }
+      }
+      setConcurrency(rounded);
+      if (isTV) commitConcurrency();
+    },
+    [commitConcurrency],
+  );
 
   return (
     <View className="mb-6">
@@ -77,21 +93,29 @@ const DownloadConcurrencyPreference = ({
             </View>
             <View
               className="rounded-full px-2.5 py-1"
-              style={{ backgroundColor: colors.surfaceContainerHighest }}>
+              style={{backgroundColor: colors.surfaceContainerHighest}}>
               <AppText
                 testID="download-concurrency-value"
                 role="titleSmall"
-                style={{ color: colors.primary, fontWeight: '700' }}>
+                style={{color: colors.primary, fontWeight: '700'}}>
                 {concurrency}
               </AppText>
             </View>
           </View>
           <View className="mt-2 w-full">
             {isTV ? (
-              <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6}}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 6,
+                }}>
                 <TVFocusable
                   ref={decreaseRef}
-                  onLayout={() => setDecreaseHandle(findNodeHandle(decreaseRef.current))}
+                  onLayout={() =>
+                    setDecreaseHandle(findNodeHandle(decreaseRef.current))
+                  }
                   nextFocusRight={increaseHandle}
                   onPress={() => update(concurrency - 1)}
                   borderRadius={20}
@@ -106,10 +130,22 @@ const DownloadConcurrencyPreference = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                  <MaterialCommunityIcons name="minus" size={24} color={colors.onSurface} />
+                  <MaterialCommunityIcons
+                    name="minus"
+                    size={24}
+                    color={colors.onSurface}
+                  />
                 </TVFocusable>
 
-                <View style={{flex: 1, marginHorizontal: 16, height: 8, backgroundColor: colors.surfaceContainerHighest, borderRadius: 4, overflow: 'hidden'}}>
+                <View
+                  style={{
+                    flex: 1,
+                    marginHorizontal: 16,
+                    height: 8,
+                    backgroundColor: colors.surfaceContainerHighest,
+                    borderRadius: 4,
+                    overflow: 'hidden',
+                  }}>
                   <View
                     style={{
                       height: '100%',
@@ -122,7 +158,9 @@ const DownloadConcurrencyPreference = ({
 
                 <TVFocusable
                   ref={increaseRef}
-                  onLayout={() => setIncreaseHandle(findNodeHandle(increaseRef.current))}
+                  onLayout={() =>
+                    setIncreaseHandle(findNodeHandle(increaseRef.current))
+                  }
                   nextFocusLeft={decreaseHandle}
                   onPress={() => update(concurrency + 1)}
                   borderRadius={20}
@@ -137,13 +175,17 @@ const DownloadConcurrencyPreference = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                  <MaterialCommunityIcons name="plus" size={24} color={colors.onSurface} />
+                  <MaterialCommunityIcons
+                    name="plus"
+                    size={24}
+                    color={colors.onSurface}
+                  />
                 </TVFocusable>
               </View>
             ) : (
               <Host
-                matchContents={{ vertical: true }}
-                style={{ width: '100%' }}
+                matchContents={{vertical: true}}
+                style={{width: '100%'}}
                 {...hostTheme}>
                 <Slider
                   value={concurrency}
@@ -158,6 +200,7 @@ const DownloadConcurrencyPreference = ({
                     inactiveTickColor: colors.outlineVariant,
                   }}
                   onValueChange={update}
+                  onValueChangeFinished={commitConcurrency}
                   modifiers={[fillMaxWidth()]}
                 />
               </Host>
@@ -176,9 +219,11 @@ const DownloadConcurrencyPreference = ({
           step={1}
           divider={false}
           onValueChange={next => {
-            settingsStorage.setDownloadConnections(next);
             setConnections(next);
           }}
+          onValueChangeFinished={next =>
+            settingsStorage.setDownloadConnections(next)
+          }
         />
       </Surface>
     </View>

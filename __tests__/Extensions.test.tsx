@@ -37,6 +37,7 @@ jest.mock('react-native-reanimated', () => {
 });
 
 jest.mock('@react-navigation/native', () => ({
+  NavigationContext: require('react').createContext(undefined),
   useFocusEffect: jest.fn(),
   useIsFocused: jest.fn(() => true),
 }));
@@ -576,15 +577,13 @@ describe('Extensions provider installation', () => {
 
   it('stops provider test when cross button is pressed', async () => {
     let capturedSignal: AbortSignal | undefined;
-    mockTestProvider.mockImplementation(
-      (_provider, onProgress, signal) => {
-        capturedSignal = signal;
-        onProgress({stage: 'catalog', status: 'running'});
-        return new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () => reject(new Error('aborted')));
-        });
-      },
-    );
+    mockTestProvider.mockImplementation((_provider, onProgress, signal) => {
+      capturedSignal = signal;
+      onProgress({stage: 'catalog', status: 'running'});
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    });
 
     await act(async () => {
       tree = renderer.create(

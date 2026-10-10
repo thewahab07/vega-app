@@ -1,4 +1,5 @@
 import {getDomain} from 'tldts';
+import {providerAbortError, throwIfProviderAborted} from './abort';
 
 /**
  * Per-domain rate limiting for provider HTTP requests.
@@ -151,7 +152,8 @@ export class DomainRateLimiter {
    * Reserves a slot for `host`, resolving once the request may proceed.
    * The returned function must be called when the request settles.
    */
-  async acquire(host: string): Promise<() => void> {
+  async acquire(host: string, signal?: AbortSignal): Promise<() => void> {
+    throwIfProviderAborted(signal);
     const key = this.getBucketKey(host);
     const state = this.getHost(key);
     this.refill(state, Date.now());
@@ -163,15 +165,24 @@ export class DomainRateLimiter {
       }
       await new Promise<void>((resolve, reject) => {
         let settled = false;
+        const removeWaiter = () => {
+          const index = state.queue.indexOf(release);
+          if (index >= 0) state.queue.splice(index, 1);
+          signal?.removeEventListener('abort', onAbort);
+        };
+        const onAbort = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          removeWaiter();
+          reject(providerAbortError());
+        };
         const timer = setTimeout(() => {
           if (settled) {
             return;
           }
           settled = true;
-          const index = state.queue.indexOf(release);
-          if (index >= 0) {
-            state.queue.splice(index, 1);
-          }
+          removeWaiter();
           reject(new Error(`Rate limit wait exceeded for ${key}`));
         }, this.options.maxQueueWaitMs);
 
@@ -181,10 +192,12 @@ export class DomainRateLimiter {
           }
           settled = true;
           clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
           resolve();
         }
 
         state.queue.push(release);
+        signal?.addEventListener('abort', onAbort, {once: true});
         this.schedulePump(true);
       });
       reservedByPump = true;
@@ -197,7 +210,7 @@ export class DomainRateLimiter {
     }
 
     let released = false;
-    return () => {
+    const releaseSlot = () => {
       if (released) {
         return;
       }
@@ -206,6 +219,11 @@ export class DomainRateLimiter {
       this.totalActive = Math.max(0, this.totalActive - 1);
       this.schedulePump(true);
     };
+    if (signal?.aborted) {
+      releaseSlot();
+      throw providerAbortError();
+    }
+    return releaseSlot;
   }
 
   /** Test/diagnostic helper. */

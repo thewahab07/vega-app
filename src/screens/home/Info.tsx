@@ -64,7 +64,6 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
     info,
     meta,
     isLoading,
-    isRefetching,
     isSynopsisLoading,
     error,
     refetch,
@@ -195,6 +194,9 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
         setInitialAccentReady(true);
       },
     );
+    return () => {
+      imageAccentRequest.current += 1;
+    };
   }, [accentBackground, dynamicInfoAccentEnabled]);
 
   const detailColors = useMemo<MaterialColors>(

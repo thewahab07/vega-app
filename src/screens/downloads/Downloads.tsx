@@ -25,9 +25,8 @@ import {
   DownloadedMediaGroup,
   groupCompletedDownloads,
 } from '../../lib/downloadLibrary';
-import {reconcileCompletedDownloadOutputs} from '../../lib/downloadReconciliation';
+import {useDownloadsMaintenance} from '../../lib/hooks/useDownloadsMaintenance';
 import {settingsStorage} from '../../lib/storage';
-import {syncFromSharedFolder} from '../../lib/sync/syncService';
 import {showAppDialog} from '../../lib/zustand/appDialogStore';
 import useDownloadsStore, {
   selectCompletedDownloads,
@@ -49,6 +48,7 @@ const Downloads = () => {
   const navigation =
     useNavigation<NativeStackNavigationProp<DownloadsStackParamList>>();
   const screenFocused = useIsFocused();
+  useDownloadsMaintenance();
   const completed = useDownloadsStore(useShallow(selectCompletedDownloads));
   const currentDownloads = useDownloadsStore(useShallow(selectCurrentDownloads));
   const groups = useMemo(() => groupCompletedDownloads(completed), [completed]);
@@ -82,6 +82,7 @@ const Downloads = () => {
   const cardWidth = (availableWidth - itemSpacing * (columns - 1)) / columns;
 
   const updateSelectButtonNode = useCallback(() => {
+    if (!isTV) return;
     if (selectButtonRef.current) {
       const handle = findNodeHandle(selectButtonRef.current);
       if (handle) setSelectButtonNode(handle);
@@ -89,6 +90,7 @@ const Downloads = () => {
   }, []);
 
   const updateFirstCardNode = useCallback(() => {
+    if (!isTV) return;
     if (firstCardRef.current) {
       const handle = findNodeHandle(firstCardRef.current);
       if (handle) {
@@ -101,6 +103,7 @@ const Downloads = () => {
   }, [screenFocused, currentDownloads.length]);
 
   const updateCurrentDownloadActionNode = useCallback(() => {
+    if (!isTV) return;
     const handle = findNodeHandle(currentDownloadActionRef.current);
     setCurrentDownloadActionNode(handle);
     if (isTV && screenFocused && handle) {
@@ -115,6 +118,7 @@ const Downloads = () => {
   }, [currentDownloads.length, screenFocused, updateCurrentDownloadActionNode]);
 
   const updateExploreButtonNode = useCallback(() => {
+    if (!isTV) return;
     if (exploreButtonRef.current) {
       const handle = findNodeHandle(exploreButtonRef.current);
       if (handle) {
@@ -127,6 +131,7 @@ const Downloads = () => {
   }, [screenFocused, currentDownloads.length, groups.length]);
 
   useEffect(() => {
+    if (!isTV || !screenFocused) return;
     const t = setTimeout(() => {
       updateSelectButtonNode();
       updateFirstCardNode();
@@ -134,6 +139,7 @@ const Downloads = () => {
     }, 150);
     return () => clearTimeout(t);
   }, [
+    screenFocused,
     groups.length,
     isSelectionModeActive,
     selectedGroupIds.size,
@@ -144,12 +150,7 @@ const Downloads = () => {
 
   useFocusEffect(
     useCallback(() => {
-      syncFromSharedFolder().catch(error =>
-        console.warn('[VegaSync] Downloads sync failed:', error),
-      );
-      reconcileCompletedDownloadOutputs().catch(error =>
-        console.warn('Download library reconciliation failed:', error),
-      );
+      if (!isTV) return;
       if (currentDownloads.length > 0 && currentDownloadActionNode) {
         useTVNavigationStore.getState().setActiveScreenFocusHandle(currentDownloadActionNode);
       } else if (groups.length > 0 && firstCardNode) {

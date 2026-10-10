@@ -1,4 +1,5 @@
 import React, {useRef, useCallback} from 'react';
+import {NavigationContext} from '@react-navigation/native';
 import * as RN from 'react-native';
 import {
   TouchableOpacity,
@@ -28,7 +29,9 @@ import {
 } from '../../lib/tv/useTVNavFocusMemory';
 
 const TVFocusGuideView = (RN as any).TVFocusGuideView;
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedPressable = isTV
+  ? Animated.createAnimatedComponent(Pressable)
+  : Pressable;
 
 export interface TVFocusableProps {
   children: React.ReactNode | ((state: {focused: boolean}) => React.ReactNode);
@@ -57,181 +60,169 @@ export interface TVFocusableProps {
   onLayout?: (event: RN.LayoutChangeEvent) => void;
 }
 
-export const TVFocusable = React.forwardRef<View, TVFocusableProps>((
-  {
-    children,
-    onPress,
-    onLongPress,
-    onFocus,
-    onBlur,
-    onLayout,
-    style,
-    focusedStyle,
-    disabled = false,
-    hasTVPreferredFocus = false,
-    nextFocusUp,
-    nextFocusDown,
-    nextFocusLeft,
-    nextFocusRight,
-    focusBorderColor,
-    showFocusBorder = true,
-    borderRadius = 8,
-    registerScreenFocus = true,
-    testID,
-    accessibilityLabel,
-    accessibilityRole,
-    accessibilityState,
-  },
-  forwardedRef,
-) => {
-  const effectiveFocusBorderColor = useTVFocusBorderColor(focusBorderColor);
+const TVFocusableImpl = React.forwardRef<View, TVFocusableProps>(
+  (
+    {
+      children,
+      onPress,
+      onLongPress,
+      onFocus,
+      onBlur,
+      onLayout,
+      style,
+      focusedStyle,
+      disabled = false,
+      hasTVPreferredFocus = false,
+      nextFocusUp,
+      nextFocusDown,
+      nextFocusLeft,
+      nextFocusRight,
+      focusBorderColor,
+      showFocusBorder = true,
+      borderRadius = 8,
+      registerScreenFocus = true,
+      testID,
+      accessibilityLabel,
+      accessibilityRole,
+      accessibilityState,
+    },
+    forwardedRef,
+  ) => {
+    const effectiveFocusBorderColor = useTVFocusBorderColor(focusBorderColor);
 
-  const isNavFocused = useSafeIsNavFocused();
-  const isCurrentlyFocusable = !disabled && isNavFocused;
+    const isNavFocused = useSafeIsNavFocused();
+    const isCurrentlyFocusable = !disabled && isNavFocused;
 
-  const buttonRef = useRef<View>(null);
-  React.useImperativeHandle(forwardedRef, () => buttonRef.current as View);
-  const {
-    preferredFocus,
-    onFocus: rememberFocus,
-    onBlur: forgetFocus,
-  } = useTVNavFocusMemory({
-    ref: buttonRef,
-    isNavFocused,
-    hasTVPreferredFocus,
-    registerScreenFocus,
-  });
+    const buttonRef = useRef<View>(null);
+    React.useImperativeHandle(forwardedRef, () => buttonRef.current as View);
+    const {
+      preferredFocus,
+      onFocus: rememberFocus,
+      onBlur: forgetFocus,
+    } = useTVNavFocusMemory({
+      ref: buttonRef,
+      isNavFocused,
+      hasTVPreferredFocus,
+      registerScreenFocus,
+    });
 
-  const [isFocused, setIsFocused] = React.useState(false);
-  // A view that turns disabled while focused (loading, busy, deleting) drops
-  // TV focus and nothing takes it. Keep it focusable until focus moves away;
-  // presses stay blocked.
-  const nativeFocusable =
-    isCurrentlyFocusable || (isTV && isNavFocused && disabled && isFocused);
-  const lastPressTime = useRef<number>(0);
-  const scale = useSharedValue(1);
-  const borderOpacity = useSharedValue(0);
+    const [isFocused, setIsFocused] = React.useState(false);
+    // A view that turns disabled while focused (loading, busy, deleting) drops
+    // TV focus and nothing takes it. Keep it focusable until focus moves away;
+    // presses stay blocked.
+    const nativeFocusable =
+      isCurrentlyFocusable || (isTV && isNavFocused && disabled && isFocused);
+    const lastPressTime = useRef<number>(0);
+    const scale = useSharedValue(1);
+    const borderOpacity = useSharedValue(0);
 
-  React.useEffect(() => {
-    if (!isNavFocused && isFocused) {
+    React.useEffect(() => {
+      if (!isNavFocused && isFocused) {
+        setIsFocused(false);
+        scale.set(withTiming(1, {duration: 150}));
+        borderOpacity.set(withTiming(0, {duration: 150}));
+      }
+    }, [isNavFocused, isFocused, scale, borderOpacity]);
+
+    const handlePress = useCallback(() => {
+      if (!isCurrentlyFocusable) return;
+      if (isTV) {
+        const now = Date.now();
+        if (now - lastPressTime.current < 400) return;
+        lastPressTime.current = now;
+      }
+      onPress?.();
+    }, [isCurrentlyFocusable, onPress]);
+
+    const handleFocus = useCallback(() => {
+      if (!isCurrentlyFocusable) return;
+      setIsFocused(true);
+      rememberFocus();
+      // Keep the TV focus ring within the control's layout bounds.
+      scale.set(
+        withTiming(1, {
+          duration: TV_FOCUS_ANIMATION_DURATION,
+          easing: Easing.out(Easing.ease),
+        }),
+      );
+      borderOpacity.set(
+        withTiming(1, {
+          duration: TV_FOCUS_ANIMATION_DURATION,
+        }),
+      );
+      onFocus?.();
+    }, [onFocus, scale, borderOpacity, isCurrentlyFocusable, rememberFocus]);
+
+    const handleBlur = useCallback(() => {
       setIsFocused(false);
-      scale.set(withTiming(1, {duration: 150}));
-      borderOpacity.set(withTiming(0, {duration: 150}));
-    }
-  }, [isNavFocused, isFocused, scale, borderOpacity]);
+      forgetFocus();
+      scale.set(
+        withTiming(1, {
+          duration: TV_FOCUS_ANIMATION_DURATION,
+          easing: Easing.out(Easing.ease),
+        }),
+      );
+      borderOpacity.set(0);
+      onBlur?.();
+    }, [onBlur, scale, borderOpacity, forgetFocus]);
 
-  const handlePress = useCallback(() => {
-    if (!isCurrentlyFocusable) return;
-    if (isTV) {
-      const now = Date.now();
-      if (now - lastPressTime.current < 400) return;
-      lastPressTime.current = now;
-    }
-    onPress?.();
-  }, [isCurrentlyFocusable, onPress]);
-
-  const handleFocus = useCallback(() => {
-    if (!isCurrentlyFocusable) return;
-    setIsFocused(true);
-    rememberFocus();
-    // Keep the TV focus ring within the control's layout bounds.
-    scale.set(withTiming(1, {
-      duration: TV_FOCUS_ANIMATION_DURATION,
-      easing: Easing.out(Easing.ease),
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{scale: scale.get()}],
     }));
-    borderOpacity.set(withTiming(1, {
-      duration: TV_FOCUS_ANIMATION_DURATION,
+
+    const borderAnimatedStyle = useAnimatedStyle(() => ({
+      opacity: showFocusBorder && isFocused ? borderOpacity.get() : 0,
     }));
-    onFocus?.();
-  }, [onFocus, scale, borderOpacity, isCurrentlyFocusable, rememberFocus]);
 
-  const handleBlur = useCallback(() => {
-    setIsFocused(false);
-    forgetFocus();
-    scale.set(withTiming(1, {
-      duration: TV_FOCUS_ANIMATION_DURATION,
-      easing: Easing.out(Easing.ease),
-    }));
-    borderOpacity.set(0);
-    onBlur?.();
-  }, [onBlur, scale, borderOpacity, forgetFocus]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{scale: scale.get()}],
-  }));
-
-  const borderAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: showFocusBorder && isFocused ? borderOpacity.get() : 0,
-  }));
-
-  if (!isTV) {
     const renderedChildren =
-      typeof children === 'function' ? children({focused: false}) : children;
+      typeof children === 'function'
+        ? children({focused: isFocused})
+        : children;
 
     return (
-      <TouchableOpacity
-        ref={forwardedRef as any}
+      <AnimatedPressable
+        ref={buttonRef as any}
         onLayout={onLayout}
-        onPress={handlePress}
-        onLongPress={onLongPress}
-        disabled={disabled}
-        style={style}
-        activeOpacity={0.7}
+        onPress={isCurrentlyFocusable ? handlePress : undefined}
+        onLongPress={isCurrentlyFocusable ? onLongPress : undefined}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        disabled={!nativeFocusable}
+        hasTVPreferredFocus={preferredFocus && !disabled}
+        nextFocusUp={nextFocusUp ?? undefined}
+        nextFocusDown={nextFocusDown ?? undefined}
+        nextFocusLeft={nextFocusLeft ?? undefined}
+        nextFocusRight={nextFocusRight ?? undefined}
+        focusable={nativeFocusable}
+        isTVSelectable={nativeFocusable}
         testID={testID}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole={accessibilityRole as any}
-        accessibilityState={accessibilityState}>
+        accessibilityState={accessibilityState}
+        style={[
+          style,
+          animatedStyle,
+          isFocused && focusedStyle,
+          isFocused ? {zIndex: 999} : undefined,
+        ]}>
         {renderedChildren}
-      </TouchableOpacity>
+        {showFocusBorder && isFocused && (
+          <Animated.View
+            style={[
+              styles.focusBorder,
+              {
+                borderColor: effectiveFocusBorderColor,
+                borderRadius: borderRadius,
+              },
+              borderAnimatedStyle,
+            ]}
+            pointerEvents="none"
+          />
+        )}
+      </AnimatedPressable>
     );
-  }
-
-  const renderedChildren =
-    typeof children === 'function' ? children({focused: isFocused}) : children;
-
-  return (
-    <AnimatedPressable
-      ref={buttonRef as any}
-      onLayout={onLayout}
-      onPress={isCurrentlyFocusable ? handlePress : undefined}
-      onLongPress={isCurrentlyFocusable ? onLongPress : undefined}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      disabled={!nativeFocusable}
-      hasTVPreferredFocus={preferredFocus && !disabled}
-      nextFocusUp={nextFocusUp ?? undefined}
-      nextFocusDown={nextFocusDown ?? undefined}
-      nextFocusLeft={nextFocusLeft ?? undefined}
-      nextFocusRight={nextFocusRight ?? undefined}
-      focusable={nativeFocusable}
-      isTVSelectable={nativeFocusable}
-      testID={testID}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole={accessibilityRole as any}
-      accessibilityState={accessibilityState}
-      style={[
-        style,
-        animatedStyle,
-        isFocused && focusedStyle,
-        isFocused ? {zIndex: 999} : undefined,
-      ]}>
-      {renderedChildren}
-      {showFocusBorder && isFocused && (
-        <Animated.View
-          style={[
-            styles.focusBorder,
-            {
-              borderColor: effectiveFocusBorderColor,
-              borderRadius: borderRadius,
-            },
-            borderAnimatedStyle,
-          ]}
-          pointerEvents="none"
-        />
-      )}
-    </AnimatedPressable>
-  );
-});
+  },
+);
 
 export interface TVFocusGuideProps {
   children: React.ReactNode;
@@ -244,7 +235,44 @@ export interface TVFocusGuideProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const TVFocusGuide: React.FC<TVFocusGuideProps> = ({
+const MobileFocusable = React.forwardRef<View, TVFocusableProps>(
+  (props, ref) => {
+    const navigation = React.useContext(NavigationContext);
+    const {
+      disabled,
+      onPress: pressCallback,
+      onLongPress: longPressCallback,
+    } = props;
+    const onPress = useCallback(() => {
+      if (!disabled && navigation?.isFocused() !== false) pressCallback?.();
+    }, [navigation, disabled, pressCallback]);
+    const onLongPress = useCallback(() => {
+      if (!disabled && navigation?.isFocused() !== false) longPressCallback?.();
+    }, [navigation, disabled, longPressCallback]);
+    return (
+      <TouchableOpacity
+        ref={ref as any}
+        onLayout={props.onLayout}
+        onPress={onPress}
+        onLongPress={props.onLongPress ? onLongPress : undefined}
+        disabled={props.disabled}
+        style={props.style}
+        activeOpacity={0.7}
+        testID={props.testID}
+        accessibilityLabel={props.accessibilityLabel}
+        accessibilityRole={props.accessibilityRole as any}
+        accessibilityState={props.accessibilityState}>
+        {typeof props.children === 'function'
+          ? props.children({focused: false})
+          : props.children}
+      </TouchableOpacity>
+    );
+  },
+);
+
+export const TVFocusable = isTV ? TVFocusableImpl : MobileFocusable;
+
+const TVFocusGuideImpl: React.FC<TVFocusGuideProps> = ({
   children,
   destinations,
   autoFocus = false,
@@ -254,16 +282,20 @@ export const TVFocusGuide: React.FC<TVFocusGuideProps> = ({
   trapFocusDown = false,
   style,
 }) => {
-  if (!isTV || !TVFocusGuideView) {
-    return <View style={style}>{children}</View>;
-  }
-
-  const destinationHandles =
-    destinations && destinations.length > 0
-      ? (destinations
-          .map(ref => (ref.current ? findNodeHandle(ref.current) : null))
-          .filter(Boolean) as any)
-      : undefined;
+  const [destinationHandles, setDestinationHandles] = React.useState<number[]>(
+    [],
+  );
+  React.useLayoutEffect(() => {
+    const next = (destinations || [])
+      .map(ref => (ref.current ? findNodeHandle(ref.current) : null))
+      .filter((handle): handle is number => handle != null);
+    setDestinationHandles(previous =>
+      previous.length === next.length &&
+      previous.every((handle, index) => handle === next[index])
+        ? previous
+        : next,
+    );
+  });
 
   return (
     <TVFocusGuideView
@@ -278,6 +310,12 @@ export const TVFocusGuide: React.FC<TVFocusGuideProps> = ({
     </TVFocusGuideView>
   );
 };
+
+const MobileFocusGuide = ({children, style}: TVFocusGuideProps) => (
+  <View style={style}>{children}</View>
+);
+export const TVFocusGuide =
+  isTV && TVFocusGuideView ? TVFocusGuideImpl : MobileFocusGuide;
 
 const styles = StyleSheet.create({
   focusBorder: {

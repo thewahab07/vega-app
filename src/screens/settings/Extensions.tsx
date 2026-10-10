@@ -2,7 +2,6 @@ import {useFocusEffect} from '@react-navigation/native';
 import React, {useState, useEffect, useMemo, useCallback, useRef} from 'react';
 import {
   View,
-  Pressable,
   StatusBar,
   ScrollView,
   FlatList,
@@ -14,7 +13,6 @@ import {useIsFocused} from '@react-navigation/native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {SettingsStackParamList} from '../../App';
 import {MaterialCommunityIcons, FontAwesome6} from '@expo/vector-icons';
-import useThemeStore from '../../lib/zustand/themeStore';
 import useContentStore from '../../lib/zustand/contentStore';
 import {
   extensionStorage,
@@ -77,6 +75,9 @@ const isSameProvider = (
   right: ProviderExtension,
 ) =>
   left?.value === right.value && left.source?.author === right.source?.author;
+
+const providerListKey = (item: ProviderExtension) =>
+  (item.source?.author || '') + ':' + item.value;
 
 const Extensions = ({navigation, route}: Props) => {
   const isScreenFocused = useIsFocused();
@@ -141,8 +142,6 @@ const Extensions = ({navigation, route}: Props) => {
   const [activeSourceAuthor, setActiveSourceAuthor] = useState<string>(
     extensionStorage.getProviderSource()?.author || '',
   );
-  const [isBackFocused, setIsBackFocused] = useState(false);
-  const [isRefreshFocused, setIsRefreshFocused] = useState(false);
   const showDialog = (
     title: string,
     message: string,
@@ -563,9 +562,17 @@ const Extensions = ({navigation, route}: Props) => {
     return Array.from(providersMap.values());
   }, [availableProviders, installedProviders]);
 
+  const installedKeys = useMemo(
+    () => new Set(installedProviders.map(providerListKey)),
+    [installedProviders],
+  );
+  const updatesByKey = useMemo(
+    () => new Map(updateInfos.map(info => [providerListKey(info.provider), info])),
+    [updateInfos],
+  );
+
   const renderProviderCard = useCallback(
     ({item}: {item: ProviderExtension}) => {
-      console.log('DEBUG renderProviderCard item:', item?.value, item?.display_name);
       if (!item || !item.value) {
         return null;
       }
@@ -573,16 +580,10 @@ const Extensions = ({navigation, route}: Props) => {
       const isActive =
         activeExtensionProvider?.value === item.value &&
         activeExtensionProvider?.source?.author === item.source?.author;
-      const isInstalled = (installedProviders || []).some(installedProvider =>
-        isSameProvider(installedProvider, item),
-      );
+      const isInstalled = installedKeys.has(itemKey);
       const isInstalling = installingProvider === itemKey;
       const isUpdating = updatingProvider === itemKey;
-      const updateInfo = updateInfos.find(
-        info =>
-          info.provider.value === item.value &&
-          info.provider.source?.author === item.source?.author,
-      );
+      const updateInfo = updatesByKey.get(itemKey);
       const hasUpdate = updateInfo?.hasUpdate || false;
 
       return (
@@ -610,10 +611,10 @@ const Extensions = ({navigation, route}: Props) => {
     },
     [
       activeExtensionProvider,
-      installedProviders,
+      installedKeys,
       installingProvider,
       updatingProvider,
-      updateInfos,
+      updatesByKey,
       providerTestStatuses,
       primary,
     ],
@@ -706,8 +707,9 @@ const Extensions = ({navigation, route}: Props) => {
         </View>
       </View>
 
-      {/* Provider list */}
-      <ScrollView
+      {/* Keep all TV focus targets attached; window phone cards. */}
+      {isTV ? (
+<ScrollView
         focusable={false}
         accessible={false}
         style={{flex: 1, marginTop: 12}}
@@ -751,6 +753,48 @@ const Extensions = ({navigation, route}: Props) => {
           ))
         )}
       </ScrollView>
+      ) : (
+      <FlatList
+        style={{flex: 1, marginTop: 12}}
+        contentContainerStyle={{paddingBottom: 48}}
+        data={currentData}
+        keyExtractor={providerListKey}
+        renderItem={renderProviderCard}
+        initialNumToRender={3}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+        updateCellsBatchingPeriod={32}
+        onScroll={handleScroll}
+        scrollEventThrottle={32}
+        ListEmptyComponent={<View className="flex-1 justify-center items-center py-20">
+            <MaterialCommunityIcons
+              name="package-variant"
+              size={64}
+              color={colors.onSecondaryContainer}
+            />
+            <AppText
+              role="titleLargeEmphasized"
+              className="mt-4 text-m3-on-surface">
+              No providers available
+            </AppText>
+            <AppText
+              role="bodyMedium"
+              className="mt-2 px-8 text-center text-m3-on-surface-variant">
+              Add or refresh a source to check for available providers
+            </AppText>
+          </View>}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[primary]}
+            tintColor={primary}
+            progressBackgroundColor={colors.surfaceContainerHigh}
+            enabled={isAtTop || refreshing}
+          />
+        }
+      />
+      )}
       <AppDialog
         visible={dialog !== null}
         title={dialog?.title || ''}

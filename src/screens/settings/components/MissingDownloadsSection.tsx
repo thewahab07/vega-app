@@ -1,5 +1,6 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import React from 'react';
+import React, {useState} from 'react';
+import {reconcileCompletedDownloadOutputs} from '../../../lib/downloadReconciliation';
 import {Text, View} from 'react-native';
 import {TVFocusable} from '../../../components/tv';
 import {useTVFocusBorderColor} from '../../../lib/tv/useTVFocusBorderColor';
@@ -9,8 +10,9 @@ import useDownloadsStore, {
 import {useShallow} from 'zustand/react/shallow';
 import {useM3Colors} from '../../../theme/M3PaletteContext';
 
-const MissingDownloadsSection = ({primary}: {primary: string}) => {
+const MissingDownloadsSection = ({primary: _primary}: {primary: string}) => {
   const colors = useM3Colors();
+  const [checkingId, setCheckingId] = useState<string | null>(null);
   const focusBorderColor = useTVFocusBorderColor();
   const missing = useDownloadsStore(useShallow(selectMissingDownloads));
   const removeDownload = useDownloadsStore(state => state.removeDownload);
@@ -60,6 +62,22 @@ const MissingDownloadsSection = ({primary}: {primary: string}) => {
               {item.errorMessage}
             </Text>
           </View>
+          <TVFocusable
+            accessibilityRole="button"
+            accessibilityLabel={'Recheck download ' + item.title}
+            disabled={checkingId !== null}
+            onPress={() => {
+              setCheckingId(item.id);
+              reconcileCompletedDownloadOutputs(undefined, new Set([item.id]))
+                .finally(() => setCheckingId(null));
+            }}
+            borderRadius={14}
+            focusBorderColor={focusBorderColor}
+            style={{paddingHorizontal: 8, paddingVertical: 8}}>
+            <Text style={{color: colors.onErrorContainer}}>
+              {checkingId === item.id ? 'Checking…' : 'Recheck'}
+            </Text>
+          </TVFocusable>
           <TVFocusable
             accessibilityRole="button"
             accessibilityLabel={`Remove missing download ${item.title}`}

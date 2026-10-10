@@ -110,9 +110,9 @@ const reconcileRecord = async (record: DownloadItem): Promise<void> => {
     .catch(() => undefined);
 
   if (record.status === 'completed') {
-    if (!(await downloadOutputExists(record.filePath))) {
-      store.markMissing(record.id);
-    }
+    await downloadOutputExists(record.filePath).then(exists => {
+      if (!exists) store.markMissing(record.id);
+    }).catch(error => console.warn('Download file could not be checked:', error));
     return;
   }
 
@@ -160,34 +160,47 @@ const reconcileRecord = async (record: DownloadItem): Promise<void> => {
   }
 };
 
-export const reconcileCompletedDownloadOutputs = async (): Promise<void> => {
-  const allRecords = Object.values(useDownloadsStore.getState().downloads);
-
-  await Promise.all(
-    allRecords.map(async record => {
+export const reconcileCompletedDownloadOutputs = async (
+  signal?: AbortSignal,
+  recordIds?: ReadonlySet<string>,
+): Promise<void> => {
+  const allRecords = Object.values(useDownloadsStore.getState().downloads).filter(
+    record =>
+      (!recordIds || recordIds.has(record.id)) &&
+      (record.status === 'completed' || record.status === 'missing'),
+  );
+  let nextIndex = 0;
+  // SAF checks cross a native/content-provider boundary. A large library must
+  // not enqueue one native request per file in a single navigation turn.
+  const worker = async () => {
+    while (!signal?.aborted) {
+      const record = allRecords[nextIndex++];
+      if (!record) return;
       const targetPath = record.filePath || record.finalDocumentUri;
+      const exists = targetPath
+        ? await downloadOutputExists(targetPath).catch(() => undefined)
+        : false;
+      if (exists === undefined) continue;
+      if (signal?.aborted) return;
+      // A deleted/replaced/retried record must not be changed by an old check.
+      if (useDownloadsStore.getState().downloads[record.id] !== record) continue;
       if (record.status === 'completed') {
-        if (!targetPath) {
-          useDownloadsStore.getState().markMissing(record.id);
-          return;
-        }
-        const exists = await downloadOutputExists(targetPath);
         if (!exists) {
           useDownloadsStore.getState().markMissing(record.id);
         }
       } else if (record.status === 'missing') {
-        if (targetPath) {
-          const exists = await downloadOutputExists(targetPath);
-          if (exists) {
-            useDownloadsStore.getState().markCompleted(record.id, {
-              filePath: targetPath,
-              finalDocumentUri: record.finalDocumentUri || targetPath,
-              totalBytes: record.totalBytes,
-            });
-          }
+        if (targetPath && exists) {
+          useDownloadsStore.getState().markCompleted(record.id, {
+            filePath: targetPath,
+            finalDocumentUri: record.finalDocumentUri || targetPath,
+            totalBytes: record.totalBytes,
+          });
         }
       }
-    }),
+    }
+  };
+  await Promise.all(
+    Array.from({length: Math.min(4, allRecords.length)}, () => worker()),
   );
 };
 

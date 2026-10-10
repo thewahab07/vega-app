@@ -26,7 +26,13 @@ const isForbiddenColor = (color?: string): boolean => {
 
   const hex = clean.replace('#', '');
   if (hex.length !== 6 && hex.length !== 3) return false;
-  const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+  const full =
+    hex.length === 3
+      ? hex
+          .split('')
+          .map(c => c + c)
+          .join('')
+      : hex;
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
@@ -36,7 +42,7 @@ const isForbiddenColor = (color?: string): boolean => {
   return r > 180 && r - b > 65 && g < 175;
 };
 
-export const useTVFocusBorderColor = (overrideColor?: string): string => {
+const useTVBorderColor = (overrideColor?: string): string => {
   const m3Colors = useM3Colors();
   const themePrimary = useThemeStore(state => state.primary);
   const accentSource = useThemeStore(state => state.source);
@@ -66,4 +72,7 @@ export const useTVFocusBorderColor = (overrideColor?: string): string => {
   }, [overrideColor, themePrimary, accentSource, m3Colors?.primary]);
 };
 
+export const useTVFocusBorderColor = isTV
+  ? useTVBorderColor
+  : (overrideColor?: string): string => overrideColor || '#FFFFFF';
 export default useTVFocusBorderColor;

@@ -1,5 +1,7 @@
 import {useCallback, useEffect, useState} from 'react';
-import {Image, InteractionManager} from 'react-native';
+import {Image} from 'react-native';
+import {scheduleWhenIdle} from '../performance/idleWork';
+import {throwIfProviderAborted} from '../sandbox/abort';
 import {QueryClient, useQuery, useQueryClient} from '@tanstack/react-query';
 import {getHomePageData, HomePageData} from '../getHomepagedata';
 import {Content} from '../zustand/contentStore';
@@ -8,7 +10,10 @@ import {deduplicatePosts} from '../providers/deduplicatePosts';
 import type {Post} from '../providers/types';
 
 const normalizeHomePosts = (data: HomePageData[]) =>
-  data.map(category => ({...category, Posts: deduplicatePosts(category.Posts || [])}));
+  data.map(category => ({
+    ...category,
+    Posts: deduplicatePosts(category.Posts || []),
+  }));
 
 interface UseHomePageDataOptions {
   provider: Content['provider'];
@@ -19,50 +24,77 @@ export const useHomePageData = ({
   provider,
   enabled = true,
 }: UseHomePageDataOptions) => {
-  const cacheKey = 'homeData' + (provider?.value || '');
+  const queryClient = useQueryClient();
+  const scope = [
+    provider.source?.author || '',
+    provider.source?.url || '',
+    provider.value,
+    provider.version,
+  ];
+  const cacheKey = 'homeData:' + JSON.stringify(scope);
+  const queryKey = ['homePageData', ...scope];
+  const catalogOptions = {
+    queryKey: ['homeCatalog', ...scope],
+    queryFn: async ({signal}: {signal: AbortSignal}) => {
+      const {providerManager} = await import('../services/ProviderManager');
+      return providerManager.getCatalog({
+        providerValue: provider.value,
+        signal,
+      });
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+  };
+  const catalogQuery = useQuery({
+    ...catalogOptions,
+    enabled: enabled && !!provider.value,
+  });
   const query = useQuery<HomePageData[], Error>({
-    queryKey: ['homePageData', provider.value],
+    queryKey,
     select: normalizeHomePosts,
     queryFn: async ({signal}) => {
-      // Fetch fresh data from provider
-      const data = await getHomePageData(provider, signal);
-      return data;
+      const catalogs = await queryClient.fetchQuery(catalogOptions);
+      return getHomePageData(provider, signal, {
+        catalogs,
+        previousData: queryClient.getQueryData<HomePageData[]>(queryKey),
+        onCategory: data => {
+          // Cancellation retains manual cache writes. Keep partial results
+          // stale so returning resumes unfinished rows immediately; query
+          // completion supplies the normal freshness timestamp.
+          if (!signal.aborted)
+            queryClient.setQueryData(queryKey, data, {updatedAt: 0});
+        },
+      });
     },
-    enabled: enabled && !!provider?.value,
-    staleTime: 0, // Mark stale immediately so it revalidates in the background
-    gcTime: 60 * 60 * 1000, // 1 hour
-    retry: (failureCount, error) => {
-      if (error.name === 'AbortError') {
-        return false;
-      }
-      return failureCount < 3;
-    },
-    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
-    // Add initial data from cache for instant loading without loading screen
+    enabled: enabled && !!provider.value,
+    staleTime: 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: (count, error) => error.name !== 'AbortError' && count < 2,
     initialData: () => {
-      const cache = cacheStorage.getString(cacheKey);
-      if (cache) {
-        try {
-          return JSON.parse(cache);
-        } catch {
-          return undefined;
-        }
+      const stored = cacheStorage.getString(cacheKey);
+      if (!stored) return undefined;
+      try {
+        return JSON.parse(stored);
+      } catch {
+        return undefined;
       }
-      return undefined;
     },
     initialDataUpdatedAt: 0,
-    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
-    refetchOnReconnect: 'always',
   });
-
   useEffect(() => {
-    if (query.data && query.data.length > 0 && provider?.value) {
-      cacheStorage.setString(cacheKey, JSON.stringify(query.data));
-    }
-  }, [cacheKey, provider?.value, query.data]);
-
-  return query;
+    if (
+      !query.data?.length ||
+      query.isFetching ||
+      query.data.some(row => row.isLoading)
+    )
+      return;
+    const task = scheduleWhenIdle(() =>
+      cacheStorage.setString(cacheKey, JSON.stringify(query.data)),
+    );
+    return task;
+  }, [cacheKey, query.data, query.isFetching]);
+  return {...query, catalog: catalogQuery.data ?? []};
 };
 
 export const HERO_COUNT = 4;
@@ -75,7 +107,7 @@ const HERO_PREFETCH_STALE_MS = 10 * 60 * 1000;
 // Hero links per provider, so tab switches and catalog refetches keep the same heroes.
 const heroSelectionCache = new Map<string, string[]>();
 
-const shuffle = <T,>(items: T[]): T[] => {
+const shuffle = <T>(items: T[]): T[] => {
   const result = [...items];
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -133,7 +165,9 @@ const heroStorageKey = (heroLink: string, providerValue: string) =>
   `heroMeta:${providerValue}:${heroLink}`;
 
 const readStoredHeroMetadata = (heroLink: string, providerValue: string) => {
-  const cached = cacheStorage.getString(heroStorageKey(heroLink, providerValue));
+  const cached = cacheStorage.getString(
+    heroStorageKey(heroLink, providerValue),
+  );
   if (cached) {
     try {
       return JSON.parse(cached);
@@ -144,13 +178,18 @@ const readStoredHeroMetadata = (heroLink: string, providerValue: string) => {
   return undefined;
 };
 
-const fetchHeroMetadata = async (heroLink: string, providerValue: string) => {
+const fetchHeroMetadata = async (
+  heroLink: string,
+  providerValue: string,
+  signal?: AbortSignal,
+) => {
   const {providerManager} = await import('../services/ProviderManager');
   const {default: axios} = await import('axios');
 
   const info = await providerManager.getMetaData({
     link: heroLink,
     provider: providerValue,
+    signal,
   });
 
   let result = info;
@@ -159,7 +198,7 @@ const fetchHeroMetadata = async (heroLink: string, providerValue: string) => {
     try {
       const response = await axios.get(
         `https://v3-cinemeta.strem.io/meta/${info.type}/${info.imdbId}.json`,
-        {timeout: 5000},
+        {timeout: 5000, signal},
       );
       result = response.data?.meta || info;
     } catch {
@@ -167,6 +206,7 @@ const fetchHeroMetadata = async (heroLink: string, providerValue: string) => {
     }
   }
 
+  throwIfProviderAborted(signal);
   cacheStorage.setString(
     heroStorageKey(heroLink, providerValue),
     JSON.stringify(result),
@@ -178,7 +218,7 @@ const fetchHeroMetadata = async (heroLink: string, providerValue: string) => {
 export const useHeroMetadata = (heroLink: string, providerValue: string) =>
   useQuery({
     queryKey: heroMetadataKey(heroLink, providerValue),
-    queryFn: () => fetchHeroMetadata(heroLink, providerValue),
+    queryFn: ({signal}) => fetchHeroMetadata(heroLink, providerValue, signal),
     enabled: !!heroLink && !!providerValue,
     // Stored details still refresh once (initialDataUpdatedAt: 0), but a
     // rotation back to a loaded hero must not refetch it every few seconds.
@@ -188,7 +228,7 @@ export const useHeroMetadata = (heroLink: string, providerValue: string) =>
     // Use cached data as initial data
     initialData: () => readStoredHeroMetadata(heroLink, providerValue),
     initialDataUpdatedAt: 0,
-    refetchOnMount: 'always',
+    refetchOnMount: true,
   });
 
 /**
@@ -200,16 +240,28 @@ const prefetchHeroMetadata = async (
   queryClient: QueryClient,
   heroLink: string,
   providerValue: string,
+  signal?: AbortSignal,
 ): Promise<boolean> => {
   const queryKey = heroMetadataKey(heroLink, providerValue);
+  if (signal?.aborted) return false;
+  const onAbort = () => {
+    const query = queryClient.getQueryCache().find({queryKey, exact: true});
+    if (query?.getObserversCount() === 0)
+      queryClient.cancelQueries({queryKey, exact: true}).catch(() => {});
+  };
+  signal?.addEventListener('abort', onAbort, {once: true});
   const stored = readStoredHeroMetadata(heroLink, providerValue);
-  if (stored !== undefined && queryClient.getQueryData(queryKey) === undefined) {
+  if (
+    stored !== undefined &&
+    queryClient.getQueryData(queryKey) === undefined
+  ) {
     queryClient.setQueryData(queryKey, stored, {updatedAt: 0});
   }
   try {
     await queryClient.fetchQuery({
       queryKey,
-      queryFn: () => fetchHeroMetadata(heroLink, providerValue),
+      queryFn: ({signal: querySignal}) =>
+        fetchHeroMetadata(heroLink, providerValue, querySignal),
       staleTime: HERO_PREFETCH_STALE_MS,
       retry: 1,
     });
@@ -219,6 +271,8 @@ const prefetchHeroMetadata = async (
     return true;
   } catch {
     return queryClient.getQueryData(queryKey) !== undefined;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
   }
 };
 
@@ -310,40 +364,26 @@ export const useHeroRotation = (
   }, [linksKey, firstLink, providerValue]);
 
   useEffect(() => {
-    if (!firstDone || posts.length < 2) {
+    if (paused || !firstDone || posts.length < 2) {
       return;
     }
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const rest = posts.slice(1);
-    const task = InteractionManager.runAfterInteractions(() => {
-      timer = setTimeout(async () => {
-        for (const post of rest) {
-          if (cancelled) {
-            return;
-          }
-          const ready = await prefetchHeroMetadata(
-            queryClient,
-            post.link,
-            providerValue,
+    const cancelJobs = posts.slice(1).map(post =>
+      scheduleWhenIdle(async signal => {
+        if (signal.aborted) return;
+        const ready = await prefetchHeroMetadata(
+          queryClient,
+          post.link,
+          providerValue,
+          signal,
+        );
+        if (!signal.aborted && ready)
+          setReadyLinks(current =>
+            current.includes(post.link) ? current : [...current, post.link],
           );
-          if (!cancelled && ready) {
-            setReadyLinks(current =>
-              current.includes(post.link) ? current : [...current, post.link],
-            );
-          }
-        }
-      }, HERO_PREFETCH_DELAY_MS);
-    });
-    return () => {
-      cancelled = true;
-      task.cancel();
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-    // linksKey stands for posts: the list is rebuilt on every catalog refetch.
-  }, [firstDone, linksKey, providerValue, queryClient]);
+      }, HERO_PREFETCH_DELAY_MS),
+    );
+    return () => cancelJobs.forEach(cancel => cancel());
+  }, [firstDone, linksKey, providerValue, queryClient, paused]);
 
   // Moves to the next (1) or previous (-1) hero that has loaded.
   const step = useCallback(

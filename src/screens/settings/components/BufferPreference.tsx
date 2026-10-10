@@ -51,8 +51,8 @@ const BufferPreference = () => {
         widestValue={formatSize(BUFFER_LIMITS.forwardMax)}
         onValueChange={next => {
           setForward(next);
-          settingsStorage.setForwardBufferMB(next);
         }}
+        onValueChangeFinished={next => settingsStorage.setForwardBufferMB(next)}
       />
       <SettingsSliderRow
         title="Back buffer"
@@ -66,8 +66,8 @@ const BufferPreference = () => {
         widestValue={formatSize(BUFFER_LIMITS.backMax)}
         onValueChange={next => {
           setBack(next);
-          settingsStorage.setBackBufferMB(next);
         }}
+        onValueChangeFinished={next => settingsStorage.setBackBufferMB(next)}
       />
       <SettingsSwitchRow
         title="Faster playback on slow servers"

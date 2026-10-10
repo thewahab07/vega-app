@@ -3,7 +3,6 @@ import {
   DevSettings,
   ToastAndroid,
   View,
-  TouchableOpacity,
   ScrollView,
   findNodeHandle,
   Keyboard,
@@ -45,6 +44,7 @@ const ProviderItem = React.memo(
         <TVFocusable
           ref={itemRef}
           onLayout={() => {
+            if (!isTV) return;
             if (itemRef.current) {
               const h = findNodeHandle(itemRef.current);
               setHandle(h);
@@ -102,7 +102,7 @@ const ProviderItem = React.memo(
     );
   },
 );
-import React, {useCallback, useEffect, useMemo} from 'react';
+import React, {useCallback, useMemo} from 'react';
 import {
   settingsStorage,
   clearAllMMKVStorage,
@@ -117,13 +117,16 @@ import {
 } from '@react-navigation/native-stack';
 import {SettingsStackParamList, TabStackParamList} from '../../App';
 import {MaterialIcons} from '@expo/vector-icons';
-import Animated, {FadeInDown, FadeInUp, Layout} from 'react-native-reanimated';
-import {useFocusEffect, useIsFocused, useNavigation} from '@react-navigation/native';
+import Animated from 'react-native-reanimated';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+} from '@react-navigation/native';
 import RenderProviderFlagIcon from '../../components/RenderProviderFLagIcon';
 import useNavigationPreferencesStore from '../../lib/zustand/navigationPreferencesStore';
 import GitHubStarButton from './components/GitHubStarButton';
 import DnsPreference from './components/DnsPreference';
-import IconButton from '../../components/ui/IconButton';
 import SettingsRow from '../../components/ui/SettingsRow';
 import SettingsSection from '../../components/ui/SettingsSection';
 import AppText from '../../components/ui/Text';
@@ -136,23 +139,11 @@ import {isTV} from '../../lib/tv';
 type Props = NativeStackScreenProps<SettingsStackParamList, 'Settings'>;
 
 const AnimatedSection = ({
-  delay,
   children,
 }: {
   delay: number;
   children: React.ReactNode;
-}) => {
-  if (isTV) {
-    return <View>{children}</View>;
-  }
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
-      layout={Layout.springify()}>
-      {children}
-    </Animated.View>
-  );
-};
+}) => <View>{children}</View>;
 
 const Settings = ({navigation}: Props) => {
   const providerManagerRowRef = React.useRef<View>(null);
@@ -314,181 +305,180 @@ const Settings = ({navigation}: Props) => {
 
   return (
     <ScreenSafeArea className="bg-m3-background">
-    <TVFocusGuide
-      autoFocus={true}
-      trapFocusRight={true}
-      trapFocusDown={true}
-      style={{flex: 1}}>
-      <ScrollContainer
-        focusable={false}
-        accessible={false}
-        className="h-full w-full bg-m3-background"
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        bounces={true}
-        overScrollMode="always"
-        {...(!isTV ? {entering: FadeInUp.springify()} : {})}
-        contentContainerStyle={{
-          paddingTop: 15,
-          paddingBottom: 24,
-          flexGrow: 1,
-        }}>
-      <View className="p-5">
-        {isTV ? (
-          <AppText
-            role="headlineLargeEmphasized"
-            className="mb-6 text-m3-on-background">
-            Settings
-          </AppText>
-        ) : (
-          <Animated.View entering={FadeInUp.springify()}>
-            <AppText
-              role="headlineLargeEmphasized"
-              className="mb-6 text-m3-on-background">
-              Settings
-            </AppText>
-          </Animated.View>
-        )}
-
-        {/* Content provider section */}
-        <AnimatedSection delay={100}>
-          <View className="mb-6">
-            <AppText
-              role="labelLarge"
-              className="mb-3"
-              style={{color: colors.onSurfaceVariant}}>
-              Content Provider
-            </AppText>
-            <View
-              style={{
-                backgroundColor: colors.background,
-                borderColor: colors.outlineVariant,
-                borderRadius: 24,
-                borderWidth: 1,
-                height: 116,
-                justifyContent: 'center',
-              }}>
-              <ScrollView
-                horizontal
-                nestedScrollEnabled
-                focusable={false}
-                accessible={false}
-                showsHorizontalScrollIndicator={false}
-                style={{flexGrow: 0}}
-                contentContainerStyle={{
-                  alignItems: 'center',
-                  paddingHorizontal: 10,
-                }}>
-                <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                  {providersList}
-                </View>
-                {installedProviders.length === 0 && (
-                  <AppText
-                    role="bodyMedium"
-                    style={{color: colors.onSurfaceVariant}}>
-                    No providers installed
-                  </AppText>
-                )}
-              </ScrollView>
-            </View>
-          </View>
-          <SettingsSection title="Provider tools">
-            <SettingsRow
-              ref={providerManagerRowRef}
-              hasTVPreferredFocus={isTV && installedProviders.length === 0}
-              title="Provider Manager"
-              description="Install, update, and test provider extensions"
-              icon="puzzle-outline"
-              divider={false}
-              onPress={() => navigation.navigate('Extensions')}
-            />
-          </SettingsSection>
-        </AnimatedSection>
-
-        {/* Network Section */}
-        <AnimatedSection delay={150}>
-          <SettingsSection title="Network">
-            <DnsPreference />
-          </SettingsSection>
-        </AnimatedSection>
-
-        {/* Main options section */}
-        <AnimatedSection delay={200}>
-          <SettingsSection title="Options">
-            <SettingsRow
-              title="Appearance"
-              // description="Accent colors and launcher icon"
-              icon="palette-outline"
-              onPress={() => navigation.navigate('Appearance')}
-            />
-            <SettingsRow
-              title="Subtitle Style"
-              icon="subtitles-outline"
-              onPress={() => navigation.navigate('SubTitlesPreferences')}
-            />
-            {hideDownloadsTab && (
-              <SettingsRow
-                title="Downloads"
-                icon="download-circle-outline"
-                onPress={() => navigation.navigate('DownloadsStack')}
-              />
+      <TVFocusGuide
+        autoFocus={true}
+        trapFocusRight={true}
+        trapFocusDown={true}
+        style={{flex: 1}}>
+        <ScrollContainer
+          focusable={false}
+          accessible={false}
+          className="h-full w-full bg-m3-background"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          bounces={true}
+          overScrollMode="always"
+          contentContainerStyle={{
+            paddingTop: 15,
+            paddingBottom: 24,
+            flexGrow: 1,
+          }}>
+          <View className="p-5">
+            {isTV ? (
+              <AppText
+                role="headlineLargeEmphasized"
+                className="mb-6 text-m3-on-background">
+                Settings
+              </AppText>
+            ) : (
+              <Animated.View>
+                <AppText
+                  role="headlineLargeEmphasized"
+                  className="mb-6 text-m3-on-background">
+                  Settings
+                </AppText>
+              </Animated.View>
             )}
-            <SettingsRow
-              title="Preferences"
-              icon="tune-variant"
-              divider={false}
-              onPress={() => navigation.navigate('Preferences')}
-            />
-          </SettingsSection>
-        </AnimatedSection>
 
-        {/* Data Management section */}
-        <AnimatedSection delay={300}>
-          <SettingsSection title="Data Management">
-            <SettingsRow
-              title="Clear Cache"
-              description="Clear temporary cache and images"
-              icon="delete-outline"
-              onPress={clearCacheHandler}
-            />
-            <SettingsRow
-              title="Export backup"
-              description="Save settings and providers to a file"
-              icon="content-save-outline"
-              onPress={exportBackupHandler}
-            />
-            <SettingsRow
-              title="Import backup"
-              description="Restore settings and providers from a file"
-              icon="backup-restore"
-              onPress={importBackupHandler}
-            />
-            <SettingsRow
-              title="Erase all local data"
-              description="Erase all local data"
-              icon="delete-alert-outline"
-              divider={false}
-              onPress={confirmEraseAllLocalData}
-            />
-          </SettingsSection>
-        </AnimatedSection>
+            {/* Content provider section */}
+            <AnimatedSection delay={100}>
+              <View className="mb-6">
+                <AppText
+                  role="labelLarge"
+                  className="mb-3"
+                  style={{color: colors.onSurfaceVariant}}>
+                  Content Provider
+                </AppText>
+                <View
+                  style={{
+                    backgroundColor: colors.background,
+                    borderColor: colors.outlineVariant,
+                    borderRadius: 24,
+                    borderWidth: 1,
+                    height: 116,
+                    justifyContent: 'center',
+                  }}>
+                  <ScrollView
+                    horizontal
+                    nestedScrollEnabled
+                    focusable={false}
+                    accessible={false}
+                    showsHorizontalScrollIndicator={false}
+                    style={{flexGrow: 0}}
+                    contentContainerStyle={{
+                      alignItems: 'center',
+                      paddingHorizontal: 10,
+                    }}>
+                    <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                      {providersList}
+                    </View>
+                    {installedProviders.length === 0 && (
+                      <AppText
+                        role="bodyMedium"
+                        style={{color: colors.onSurfaceVariant}}>
+                        No providers installed
+                      </AppText>
+                    )}
+                  </ScrollView>
+                </View>
+              </View>
+              <SettingsSection title="Provider tools">
+                <SettingsRow
+                  ref={providerManagerRowRef}
+                  hasTVPreferredFocus={isTV && installedProviders.length === 0}
+                  title="Provider Manager"
+                  description="Install, update, and test provider extensions"
+                  icon="puzzle-outline"
+                  divider={false}
+                  onPress={() => navigation.navigate('Extensions')}
+                />
+              </SettingsSection>
+            </AnimatedSection>
 
-        {/* About & GitHub section */}
-        <AnimatedSection delay={400}>
-          <SettingsSection title="About">
-            <SettingsRow
-              title="About Vega"
-              icon="information-outline"
-              onPress={() => navigation.navigate('About')}
-            />
-            <GitHubStarButton primary={colors.primary} />
-          </SettingsSection>
-        </AnimatedSection>
-      </View>
-    </ScrollContainer>
-  </TVFocusGuide>
-  </ScreenSafeArea>
+            {/* Network Section */}
+            <AnimatedSection delay={150}>
+              <SettingsSection title="Network">
+                <DnsPreference />
+              </SettingsSection>
+            </AnimatedSection>
+
+            {/* Main options section */}
+            <AnimatedSection delay={200}>
+              <SettingsSection title="Options">
+                <SettingsRow
+                  title="Appearance"
+                  // description="Accent colors and launcher icon"
+                  icon="palette-outline"
+                  onPress={() => navigation.navigate('Appearance')}
+                />
+                <SettingsRow
+                  title="Subtitle Style"
+                  icon="subtitles-outline"
+                  onPress={() => navigation.navigate('SubTitlesPreferences')}
+                />
+                {hideDownloadsTab && (
+                  <SettingsRow
+                    title="Downloads"
+                    icon="download-circle-outline"
+                    onPress={() => navigation.navigate('DownloadsStack')}
+                  />
+                )}
+                <SettingsRow
+                  title="Preferences"
+                  icon="tune-variant"
+                  divider={false}
+                  onPress={() => navigation.navigate('Preferences')}
+                />
+              </SettingsSection>
+            </AnimatedSection>
+
+            {/* Data Management section */}
+            <AnimatedSection delay={300}>
+              <SettingsSection title="Data Management">
+                <SettingsRow
+                  title="Clear Cache"
+                  description="Clear temporary cache and images"
+                  icon="delete-outline"
+                  onPress={clearCacheHandler}
+                />
+                <SettingsRow
+                  title="Export backup"
+                  description="Save settings and providers to a file"
+                  icon="content-save-outline"
+                  onPress={exportBackupHandler}
+                />
+                <SettingsRow
+                  title="Import backup"
+                  description="Restore settings and providers from a file"
+                  icon="backup-restore"
+                  onPress={importBackupHandler}
+                />
+                <SettingsRow
+                  title="Erase all local data"
+                  description="Erase all local data"
+                  icon="delete-alert-outline"
+                  divider={false}
+                  onPress={confirmEraseAllLocalData}
+                />
+              </SettingsSection>
+            </AnimatedSection>
+
+            {/* About & GitHub section */}
+            <AnimatedSection delay={400}>
+              <SettingsSection title="About">
+                <SettingsRow
+                  title="About Vega"
+                  icon="information-outline"
+                  onPress={() => navigation.navigate('About')}
+                />
+                <GitHubStarButton primary={colors.primary} />
+              </SettingsSection>
+            </AnimatedSection>
+          </View>
+        </ScrollContainer>
+      </TVFocusGuide>
+    </ScreenSafeArea>
   );
 };
 

@@ -1,7 +1,13 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {useWindowDimensions, View} from 'react-native';
 import {FlatList} from 'react-native-gesture-handler';
-import React, {memo, useCallback, useMemo} from 'react';
+import React, {
+  memo,
+  useCallback,
+  useMemo,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 import type {Post} from '../lib/providers/types';
 import {deduplicatePosts} from '../lib/providers/deduplicatePosts';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -16,9 +22,16 @@ import {TVFocusable, TVFocusGuide} from './tv';
 import {useTVFocusBorderColor} from '../lib/tv/useTVFocusBorderColor';
 
 import AppText from './ui/Text';
+import {beginUIInteraction, endUIInteraction} from '../lib/performance/idleWork';
 
 const SKELETON_CARD_SPAN = 136;
 const MAX_SKELETON_CARDS = 20;
+const rowOffsets = new Map<string, number>();
+const saveRowOffset = (key: string, offset: number) => {
+  rowOffsets.delete(key);
+  rowOffsets.set(key, offset);
+  if (rowOffsets.size > 120) rowOffsets.delete(rowOffsets.keys().next().value!);
+};
 
 const SliderSeparator = () => <View style={{width: 14}} />;
 
@@ -53,23 +66,55 @@ const Slider = ({
   posts,
   filter,
   providerValue,
+  scrollKey,
   isSearch = false,
   error,
+  deferPosts = false,
 }: {
   isLoading: boolean;
   title: string;
   posts: Post[];
   filter: string;
   providerValue?: string;
+  scrollKey?: string;
   isSearch?: boolean;
   error?: string;
+  deferPosts?: boolean;
 }): React.ReactElement => {
-  const provider = useContentStore(state => state.provider);
+  // Explicit row providers must not subscribe recycled/offscreen rows to the
+  // global selection change before Home supplies their new data.
+  const fallbackProviderValue = useContentStore(state =>
+    providerValue ? undefined : state.provider?.value,
+  );
   const colors = useM3Colors();
   const focusBorderColor = useTVFocusBorderColor();
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const [isSelected, setSelected] = React.useState('');
+  const listRef = useRef<FlatList<Post>>(null);
+  const pendingOffset = useRef<number | undefined>(undefined);
+  const interactionKey = `home-row:${scrollKey ?? title}`;
+  React.useEffect(() => () => {
+    endUIInteraction(interactionKey + ":drag");
+    endUIInteraction(interactionKey + ":momentum");
+  }, [interactionKey]);
+  useLayoutEffect(() => {
+    if (isTV || !scrollKey || isLoading) return;
+    setSelected('');
+    pendingOffset.current = rowOffsets.get(scrollKey) ?? 0;
+    listRef.current?.scrollToOffset({
+      offset: pendingOffset.current,
+      animated: false,
+    });
+  }, [scrollKey, isLoading]);
+  const restoreOffset = useCallback(() => {
+    if (pendingOffset.current === undefined) return;
+    listRef.current?.scrollToOffset({
+      offset: pendingOffset.current,
+      animated: false,
+    });
+    pendingOffset.current = undefined;
+  }, []);
   const uniquePosts = useMemo(() => deduplicatePosts(posts), [posts]);
   const {width: windowWidth} = useWindowDimensions();
   // Cards that fit on screen, plus one. The skeleton row clips overflow, so
@@ -83,21 +128,29 @@ const Slider = ({
     navigation.navigate('ScrollList', {
       title: title,
       filter: filter,
-      providerValue: providerValue || posts[0]?.provider || provider?.value,
+      providerValue: providerValue || posts[0]?.provider || fallbackProviderValue,
       isSearch: isSearch,
     });
-  }, [navigation, title, filter, providerValue, posts, provider?.value, isSearch]);
+  }, [
+    navigation,
+    title,
+    filter,
+    providerValue,
+    posts,
+    fallbackProviderValue,
+    isSearch,
+  ]);
 
   const handleItemPress = useCallback(
     (item: Post) => {
       setSelected('');
       navigation.navigate('Info', {
         link: item.link,
-        provider: item.provider || providerValue || provider?.value,
+        provider: item.provider || providerValue || fallbackProviderValue,
         poster: item?.image,
       });
     },
-    [navigation, providerValue, provider?.value],
+    [navigation, providerValue, fallbackProviderValue],
   );
 
   const renderItem = useCallback(
@@ -107,12 +160,19 @@ const Slider = ({
     [handleItemPress],
   );
 
-  const keyExtractor = useCallback((item: Post, index: number) =>
-    JSON.stringify([item.provider || providerValue || provider?.value || '', item.link || index]),
-  [providerValue, provider?.value]);
+  const keyExtractor = useCallback(
+    (item: Post, index: number) =>
+      JSON.stringify([
+        item.provider || providerValue || fallbackProviderValue || '',
+        item.link || index,
+      ]),
+    [providerValue, fallbackProviderValue],
+  );
 
   return (
-    <TVFocusGuide autoFocus={false} style={{gap: 14, marginTop: 28, overflow: 'visible'}}>
+    <TVFocusGuide
+      autoFocus={false}
+      style={{gap: 14, marginTop: 28, overflow: 'visible'}}>
       <View
         style={{
           alignItems: 'center',
@@ -174,7 +234,11 @@ const Slider = ({
           </TVFocusable>
         )}
       </View>
-      {isLoading ? (
+      {deferPosts ? (
+        // One static placeholder instead of mounting animated skeletons and
+        // native text/image cells for every incoming row in the same commit.
+        <View accessibilityLabel={title + ' loading'} style={{height: 243, marginHorizontal: 20, borderRadius: 18, backgroundColor: colors.surfaceContainerHigh}} />
+      ) : isLoading ? (
         <View className="flex flex-row gap-2 overflow-hidden">
           {Array.from({length: skeletonCount}).map((_, index) => (
             <View
@@ -188,6 +252,22 @@ const Slider = ({
         </View>
       ) : (
         <FlatList
+          key={isTV ? undefined : scrollKey}
+          ref={listRef}
+          onScrollBeginDrag={() => { restoreOffset(); beginUIInteraction(interactionKey + ":drag"); }}
+          onScrollEndDrag={() => endUIInteraction(interactionKey + ":drag")}
+          onMomentumScrollBegin={() => beginUIInteraction(interactionKey + ":momentum")}
+          onMomentumScrollEnd={() => endUIInteraction(interactionKey + ":momentum")}
+          onContentSizeChange={restoreOffset}
+          onScroll={
+            isTV || !scrollKey
+              ? undefined
+              : event => {
+                  if (pendingOffset.current === undefined)
+                    saveRowOffset(scrollKey, event.nativeEvent.contentOffset.x);
+                }
+          }
+          scrollEventThrottle={100}
           showsHorizontalScrollIndicator={false}
           data={uniquePosts}
           extraData={isSelected}
@@ -202,10 +282,10 @@ const Slider = ({
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           initialNumToRender={skeletonCount}
-          maxToRenderPerBatch={8}
-          // Two screens of posters on each side. Enough for flings and held
-          // D-pad presses, and far fewer mounted cards per row than 7.
-          windowSize={5}
+          maxToRenderPerBatch={isTV ? 8 : 4}
+          // Phones keep one screen of posters on each side to bound provider
+          // rebinding work. TV keeps two for held D-pad navigation.
+          windowSize={isTV ? 5 : 3}
           removeClippedSubviews={false}
           ListFooterComponent={
             !isLoading && error ? (

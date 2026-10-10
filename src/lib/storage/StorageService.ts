@@ -5,6 +5,7 @@ import type {StateStorage} from 'zustand/middleware';
  * Interface for the StorageService class
  */
 export interface IStorageService {
+  getRevision?(key: string): number;
   getString(key: string): string | undefined;
   setString(key: string, value: string): void;
   getBool(key: string, defaultValue?: boolean): boolean;
@@ -28,6 +29,17 @@ export interface IStorageService {
 export class StorageService implements IStorageService {
   // Define storage variable with proper typing
   private storage;
+  private revision = 0;
+  private clearedAt = 0;
+  private readonly keyRevisions = new Map<string, number>();
+
+  getRevision(key: string): number {
+    return this.keyRevisions.get(key) ?? this.clearedAt;
+  }
+
+  private didWrite(key: string): void {
+    this.keyRevisions.set(key, ++this.revision);
+  }
 
   constructor(instanceId?: string) {
     const loader = new MMKVLoader();
@@ -43,6 +55,7 @@ export class StorageService implements IStorageService {
 
   setString(key: string, value: string): void {
     this.storage.setString(key, value);
+    this.didWrite(key);
   }
 
   // Boolean operations
@@ -53,6 +66,7 @@ export class StorageService implements IStorageService {
 
   setBool(key: string, value: boolean): void {
     this.storage.setBool(key, value);
+    this.didWrite(key);
   }
 
   // Number operations
@@ -64,6 +78,7 @@ export class StorageService implements IStorageService {
   setNumber(key: string, value: number): void {
     // Use setInt for number values
     this.storage.setInt(key, value);
+    this.didWrite(key);
   }
 
   // Object operations
@@ -81,7 +96,7 @@ export class StorageService implements IStorageService {
   }
 
   setObject<T>(key: string, value: T): void {
-    this.storage.setString(key, JSON.stringify(value));
+    this.setString(key, JSON.stringify(value));
   }
 
   // Array operations
@@ -96,6 +111,7 @@ export class StorageService implements IStorageService {
   // Delete operations
   delete(key: string): void {
     this.storage.removeItem(key);
+    this.didWrite(key);
   }
 
   // Check if key exists
@@ -116,6 +132,8 @@ export class StorageService implements IStorageService {
   // Clear all storage
   clearAll(): void {
     this.storage.clearStore();
+    this.keyRevisions.clear();
+    this.clearedAt = ++this.revision;
   }
 
   // Get all keys
@@ -135,9 +153,13 @@ export class StorageService implements IStorageService {
 // Create and export default instances
 export const mainStorage: IStorageService = new StorageService();
 export const cacheStorage: IStorageService = new StorageService('cache');
-export const providerKvStorage: IStorageService = new StorageService('provider_kv');
+export const providerKvStorage: IStorageService = new StorageService(
+  'provider_kv',
+);
 // Cookies saved by providers, one jar per source author.
-export const providerCookieStorage: IStorageService = new StorageService('provider_cookies');
+export const providerCookieStorage: IStorageService = new StorageService(
+  'provider_cookies',
+);
 
 export const clearAllMMKVStorage = (): void => {
   cacheStorage.clearAll();

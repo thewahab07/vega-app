@@ -1,4 +1,6 @@
 import React from 'react';
+jest.mock('../src/lib/quickDownload', () => ({queueQuickDownload: jest.fn()}));
+jest.mock('../src/lib/downloadLocation', () => ({ensureDownloadLocationAccess: jest.fn()}));
 import renderer, {act} from 'react-test-renderer';
 
 jest.mock('react-native-reanimated', () => {

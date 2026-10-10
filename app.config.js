@@ -34,6 +34,7 @@ module.exports = () => {
     './plugins/with-android-notification-icons.js',
     './plugins/with-notifee-service.js',
     './plugins/with-android-release-gradle.js',
+    './plugins/with-native-scroll-performance.js',
     './plugins/with-android-signing.js',
     './plugins/with-android-okhttp.js',
     ...(HAS_FIREBASE ? ['@react-native-firebase/app'] : []),
@@ -142,7 +143,7 @@ module.exports = () => {
       autolinking: {exclude: ['expo-splash-screen']},
       plugins,
       slug: 'vega',
-      version: '5.0.2',
+      version: '5.0.3',
       userInterfaceStyle: 'dark',
       experiments: {
         reactCompiler: true,
@@ -152,7 +153,7 @@ module.exports = () => {
           ? {googleServicesFile: androidGoogleServicesFile}
           : {}),
         package: PACKAGE_NAME,
-        versionCode: 200,
+        versionCode: 201,
         permissions: [
           'FOREGROUND_SERVICE',
           'FOREGROUND_SERVICE_DATA_SYNC',

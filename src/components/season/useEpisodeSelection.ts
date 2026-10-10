@@ -6,10 +6,12 @@ import {
   copiedLinksMessage,
   resolveEpisodeLinks,
 } from '../../lib/episodeLinks';
+import {Stream} from '../../lib/providers/types';
 
 export interface CopyProgress {
   current: number;
   total: number;
+  action?: 'copy' | 'download';
 }
 
 interface UseEpisodeSelectionOptions {
@@ -18,12 +20,20 @@ interface UseEpisodeSelectionOptions {
   /** Selection ends when this changes, e.g. on season change. */
   resetKey: string | undefined;
   fetchStreams: FetchEpisodeStreams;
+  prepareDownloads?: () => Promise<boolean>;
+  downloadEpisode?: (
+    episode: EpisodeLinkTarget,
+    stream: Stream,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
 }
 
 export const useEpisodeSelection = ({
   items,
   resetKey,
   fetchStreams,
+  prepareDownloads,
+  downloadEpisode,
 }: UseEpisodeSelectionOptions) => {
   const [active, setActive] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -124,6 +134,67 @@ export const useEpisodeSelection = ({
     );
   }, [fetchStreams, selectedItems]);
 
+  const downloadSelected = useCallback(async () => {
+    if (controllerRef.current || !downloadEpisode || !selectedItems.length)
+      return;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setProgress({current: 0, total: selectedItems.length, action: 'download'});
+    let queued = 0;
+    let skipped = 0;
+    try {
+      if (prepareDownloads && !(await prepareDownloads())) return;
+      for (let index = 0; index < selectedItems.length; index++) {
+        if (controller.signal.aborted) return;
+        setProgress({
+          current: index + 1,
+          total: selectedItems.length,
+          action: 'download',
+        });
+        try {
+          const streams = await fetchStreams(
+            selectedItems[index].link,
+            controller.signal,
+          );
+          if (controller.signal.aborted) return;
+          const stream = streams?.[0];
+          if (
+            stream?.link &&
+            (await downloadEpisode(
+              selectedItems[index],
+              stream,
+              controller.signal,
+            ))
+          ) {
+            queued++;
+          } else {
+            skipped++;
+          }
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          console.warn('Could not queue episode download', error);
+          skipped++;
+        }
+      }
+      if (!controller.signal.aborted) {
+        ToastAndroid.show(
+          `Queued ${queued} download${queued === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}`,
+          ToastAndroid.LONG,
+        );
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.warn('Could not start selected downloads', error);
+        ToastAndroid.show('Could not start downloads', ToastAndroid.SHORT);
+      }
+    } finally {
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        setProgress(null);
+      }
+    }
+  }, [downloadEpisode, fetchStreams, prepareDownloads, selectedItems]);
+
   return {
     active,
     selected,
@@ -135,6 +206,7 @@ export const useEpisodeSelection = ({
     toggle,
     toggleAll,
     copyLinks,
+    downloadSelected,
     cancelCopy,
   };
 };

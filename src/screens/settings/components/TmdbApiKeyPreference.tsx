@@ -9,10 +9,15 @@ import {useM3Colors} from '../../../theme/M3PaletteContext';
 import {TVFocusable} from '../../../components/tv';
 import {isTV} from '../../../lib/tv';
 
-const TmdbApiKeyPreference = () => {
+const TmdbApiKeyPreference = ({draft}: {draft?: {
+  inputKey: string;
+  setInputKey: React.Dispatch<React.SetStateAction<string>>;
+}}) => {
   const colors = useM3Colors();
   const [savedKey, setSavedKey] = useState(() => settingsStorage.getTmdbApiKey());
-  const [inputKey, setInputKey] = useState(() => settingsStorage.getTmdbApiKey());
+  const [localInputKey, setLocalInputKey] = useState(() => settingsStorage.getTmdbApiKey());
+  const inputKey = draft?.inputKey ?? localInputKey;
+  const setInputKey = draft?.setInputKey ?? setLocalInputKey;
   const [showKey, setShowKey] = useState(false);
 
   // Sync state from storage whenever screen gains focus
@@ -20,8 +25,8 @@ const TmdbApiKeyPreference = () => {
     useCallback(() => {
       const currentStoredKey = settingsStorage.getTmdbApiKey();
       setSavedKey(currentStoredKey);
-      setInputKey(currentStoredKey);
-    }, []),
+      if (!draft) setLocalInputKey(currentStoredKey);
+    }, [Boolean(draft)]),
   );
 
   const normalizedInput = inputKey.trim();

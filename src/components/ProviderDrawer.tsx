@@ -16,12 +16,19 @@ interface ProviderDrawerProps {
   onClose: () => void;
   /** The mobile drawer renders its content while closed. */
   isOpen?: boolean;
+  onSelectProvider?: (
+    provider: import('../lib/storage/extensionStorage').ProviderExtension,
+  ) => void;
 }
 
-const ProviderDrawer = ({onClose, isOpen = true}: ProviderDrawerProps) => {
-  const {provider, setProvider, installedProviders} = useContentStore(
-    state => state,
-  );
+const ProviderDrawer = ({
+  onClose,
+  isOpen = true,
+  onSelectProvider,
+}: ProviderDrawerProps) => {
+  const provider = useContentStore(state => state.provider);
+  const setProvider = useContentStore(state => state.setProvider);
+  const installedProviders = useContentStore(state => state.installedProviders);
   const hasSelectedProvider = installedProviders.some(
     item => item.value === provider.value,
   );
@@ -38,10 +45,13 @@ const ProviderDrawer = ({onClose, isOpen = true}: ProviderDrawerProps) => {
   const handleSelectProvider = React.useCallback(
     (item: any) => {
       if (Date.now() - mountTimeRef.current < 350) return;
-      setProvider(item);
-      onClose();
+      if (onSelectProvider) onSelectProvider(item);
+      else {
+        setProvider(item);
+        onClose();
+      }
     },
-    [setProvider, onClose],
+    [setProvider, onClose, onSelectProvider],
   );
 
   useEffect(() => {
@@ -169,10 +179,7 @@ const ProviderDrawer = ({onClose, isOpen = true}: ProviderDrawerProps) => {
               providers={installedProviders}
               selectedValue={provider.value}
               primary={primary}
-              onSelect={item => {
-                setProvider(item);
-                onClose();
-              }}
+              onSelect={handleSelectProvider}
             />
           )}
           <View className="h-16" />

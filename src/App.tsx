@@ -1,3 +1,10 @@
+import {
+  navigationWorkListeners,
+  beginUIInteraction,
+  endUIInteraction,
+  flushInteractionCommits,
+  scheduleWhenIdle,
+} from './lib/performance/idleWork';
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import './global.css';
 import Home from './screens/home/Home';
@@ -19,7 +26,6 @@ import 'react-native-reanimated';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import WebView from './screens/WebView';
 import SearchResults from './screens/SearchResults';
-import * as SystemUI from 'expo-system-ui';
 // import DisableProviders from './screens/settings/DisableProviders';
 import About, {checkForUpdate} from './screens/settings/About';
 import BootSplash from 'react-native-bootsplash';
@@ -330,7 +336,9 @@ const renderTabBar = (props: React.ComponentProps<typeof StreamingTabBar>) => (
 
 function HomeStackScreen() {
   return (
-    <HomeStack.Navigator screenOptions={stackScreenOptions}>
+    <HomeStack.Navigator
+      screenListeners={navigationWorkListeners}
+      screenOptions={stackScreenOptions}>
       <HomeStack.Screen name="Home" component={Home} />
       <HomeStack.Screen name="Info" component={Info} />
       <HomeStack.Screen name="ScrollList" component={ScrollList} />
@@ -341,7 +349,9 @@ function HomeStackScreen() {
 
 function SearchStackScreen() {
   return (
-    <SearchStack.Navigator screenOptions={stackScreenOptions}>
+    <SearchStack.Navigator
+      screenListeners={navigationWorkListeners}
+      screenOptions={stackScreenOptions}>
       <SearchStack.Screen name="Search" component={Search} />
       <SearchStack.Screen name="ScrollList" component={ScrollList} />
       <SearchStack.Screen name="Info" component={Info} />
@@ -353,7 +363,9 @@ function SearchStackScreen() {
 
 function WatchListStackScreen() {
   return (
-    <WatchListStack.Navigator screenOptions={stackScreenOptions}>
+    <WatchListStack.Navigator
+      screenListeners={navigationWorkListeners}
+      screenOptions={stackScreenOptions}>
       <WatchListStack.Screen name="WatchList" component={Library} />
       <WatchListStack.Screen name="Info" component={Info} />
     </WatchListStack.Navigator>
@@ -362,7 +374,9 @@ function WatchListStackScreen() {
 
 function DownloadsStackScreen() {
   return (
-    <DownloadsStack.Navigator screenOptions={stackScreenOptions}>
+    <DownloadsStack.Navigator
+      screenListeners={navigationWorkListeners}
+      screenOptions={stackScreenOptions}>
       <DownloadsStack.Screen name="Downloads" component={Downloads} />
       <DownloadsStack.Screen
         name="DownloadedDetails"
@@ -380,7 +394,9 @@ function SettingsStackScreen() {
   );
 
   return (
-    <SettingsStack.Navigator screenOptions={stackScreenOptions}>
+    <SettingsStack.Navigator
+      screenListeners={navigationWorkListeners}
+      screenOptions={stackScreenOptions}>
       <SettingsStack.Screen name="Settings" component={Settings} />
       <SettingsStack.Screen
         name="Appearance"
@@ -420,6 +436,8 @@ function SettingsStackScreen() {
 }
 
 function TabStack() {
+  // Native tab retention can leave inactive Screen roots above Home on Android.
+  // Use the navigator's native detach policy until retention is touch-safe.
   const {width: windowWidth, height: windowHeight} = useWindowDimensions();
   const isLargeScreen = isTV || Math.min(windowWidth, windowHeight) >= 600;
   const hideDownloadsTab = useNavigationPreferencesStore(
@@ -427,7 +445,7 @@ function TabStack() {
   );
   const screenOptions = useMemo(
     () => ({
-      animation: 'shift' as const,
+      animation: isTV ? ('shift' as const) : ('fade' as const),
       popToTopOnBlur: false,
       tabBarPosition: isLargeScreen ? ('left' as const) : ('bottom' as const),
       headerShown: false,
@@ -436,9 +454,10 @@ function TabStack() {
     }),
     [isLargeScreen],
   );
-  return (
+  const tabs = (
     <Tab.Navigator
-      detachInactiveScreens={true}
+      screenListeners={navigationWorkListeners}
+      detachInactiveScreens
       tabBar={renderTabBar}
       screenOptions={screenOptions}>
       <Tab.Screen
@@ -470,6 +489,7 @@ function TabStack() {
       />
     </Tab.Navigator>
   );
+  return tabs;
 }
 
 const App = () => {
@@ -516,6 +536,7 @@ const App = () => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
+        endUIInteraction('app-background');
         reconcileCompletedDownloadOutputs().catch(error =>
           console.warn('Download foreground reconciliation failed:', error),
         );
@@ -523,6 +544,8 @@ const App = () => {
           console.warn('[VegaSync] Foreground sync failed:', error),
         );
       } else {
+        beginUIInteraction('app-background');
+        flushInteractionCommits();
         publishSyncManifest().catch(error =>
           console.warn('[VegaSync] Background publish failed:', error),
         );
@@ -530,9 +553,7 @@ const App = () => {
     });
     const interval = setInterval(() => {
       if (AppState.currentState === 'active') {
-        syncFromSharedFolder().catch(error =>
-          console.warn('[VegaSync] Periodic sync failed:', error),
-        );
+        scheduleWhenIdle(() => syncFromSharedFolder());
       }
     }, 30000);
     return () => {
@@ -676,7 +697,9 @@ const App = () => {
                 onReady={handleNavigationReady}
                 onStateChange={handleNavigationStateChange}
                 theme={navigationTheme}>
-                <Stack.Navigator screenOptions={rootStackScreenOptions}>
+                <Stack.Navigator
+                  screenListeners={navigationWorkListeners}
+                  screenOptions={rootStackScreenOptions}>
                   <Stack.Screen name="TabStack" component={TabStack} />
                   <Stack.Screen
                     name="Player"

@@ -1,3 +1,4 @@
+import {scheduleWhenIdle} from './performance/idleWork';
 import {cache, getColors} from 'react-native-image-colors';
 import {mixHex} from '../theme/seeds';
 import {cacheStorage} from './storage/StorageService';
@@ -5,8 +6,13 @@ import {cacheStorage} from './storage/StorageService';
 const IMAGE_COLOR_FALLBACK = '#FFFFFF';
 const accentCache = new Map<string, Promise<string>>();
 const inFlightExtractions = new Map<string, Promise<string | undefined>>();
+const extractionCancels = new Set<() => void>();
+let cacheGeneration = 0;
 
 export const clearImageAccentCache = (): void => {
+  cacheGeneration++;
+  extractionCancels.forEach(cancel => cancel());
+  extractionCancels.clear();
   accentCache.clear();
   inFlightExtractions.clear();
 };
@@ -112,43 +118,50 @@ export const extractImageAccent = async (
     return inFlight;
   }
 
-  const extractionPromise = (async () => {
-    try {
-      // 3. Set a strict 3.5s timeout on image download/color extraction so the UI never hangs
-      const fetchColorsPromise = getColors(imageUri, {
-        cache: true,
-        fallback: IMAGE_COLOR_FALLBACK,
-        key: cacheKey,
-        pixelSpacing: 8,
-      });
-
-      const timeoutPromise = new Promise<undefined>(resolve =>
-        setTimeout(() => resolve(undefined), 3500),
-      );
-
-      const imageColors = await Promise.race([fetchColorsPromise, timeoutPromise]);
-      if (!imageColors) {
+  if (inFlightExtractions.size >= 128) return undefined;
+  const generation = cacheGeneration;
+  let cancelExtraction: () => void;
+  const extractionPromise = new Promise<string | undefined>(resolve => {
+    let resolved = false;
+    const finish = (value: string | undefined) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(value);
+    };
+    // The UI can use its fallback after 3.5s, but the serialized native job
+    // remains occupied until extraction actually ends. A timeout isn't cancel.
+    const timeout = setTimeout(() => finish(undefined), 3500);
+    const cancelJob = scheduleWhenIdle(async signal => {
+      try {
+        if (generation !== cacheGeneration || signal.aborted) return;
+        const imageColors = await getColors(imageUri, {
+          cache: false,
+          fallback: IMAGE_COLOR_FALLBACK,
+          key: cacheKey,
+          pixelSpacing: 8,
+        });
+        if (generation !== cacheGeneration || signal.aborted) return;
+        const accent = selectImageAccent(imageColors);
+        if (accent) cacheStorage.setString('accent:' + cacheKey, accent);
+        else cache.removeItem(cacheKey);
+        finish(accent);
+      } catch {
         cache.removeItem(cacheKey);
-        return undefined;
+      } finally {
+        clearTimeout(timeout);
+        finish(undefined);
+        extractionCancels.delete(cancelExtraction);
+        if (inFlightExtractions.get(cacheKey) === extractionPromise)
+          inFlightExtractions.delete(cacheKey);
       }
-
-      const accent = selectImageAccent(imageColors);
-      if (!accent) {
-        cache.removeItem(cacheKey);
-        return undefined;
-      }
-
-      // 4. Save to persistent MMKV cache for instant 0ms future access
-      cacheStorage.setString(`accent:${cacheKey}`, accent);
-      return accent;
-    } catch {
-      cache.removeItem(cacheKey);
-      return undefined;
-    } finally {
-      inFlightExtractions.delete(cacheKey);
-    }
-  })();
-
+    });
+    cancelExtraction = () => {
+      clearTimeout(timeout);
+      cancelJob();
+      finish(undefined);
+    };
+    extractionCancels.add(cancelExtraction);
+  });
   inFlightExtractions.set(cacheKey, extractionPromise);
   return extractionPromise;
 };
@@ -166,11 +179,15 @@ export const getImageAccent = (
     return cached;
   }
 
-  const cacheKey = `shared-image-accent-v2:${imageUri}`;
-  const accent = extractImageAccent(imageUri, cacheKey).then(extractedColor =>
-    extractedColor ? mixHex(extractedColor, '#FFFFFF', 0.35) : fallback,
-  );
+  const cacheKey = `shared-image-accent-v3:${imageUri}`;
+  const accent = extractImageAccent(imageUri, cacheKey).then(extractedColor => {
+    if (!extractedColor && accentCache.get(imageUri) === accent)
+      accentCache.delete(imageUri);
+    return extractedColor ? mixHex(extractedColor, '#FFFFFF', 0.35) : fallback;
+  });
 
   accentCache.set(imageUri, accent);
+  if (accentCache.size > 128)
+    accentCache.delete(accentCache.keys().next().value!);
   return accent;
 };

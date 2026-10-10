@@ -8,13 +8,10 @@ import React, {
 import {
   View,
   TouchableOpacity,
-  Pressable,
   ToastAndroid,
   FlatList,
-  ActivityIndicator,
   Image,
   ScrollView,
-  TextInput,
   BackHandler,
   findNodeHandle,
   UIManager,
@@ -40,7 +37,7 @@ import {cacheStorage, mainStorage, settingsStorage} from '../lib/storage';
 import {ifExists} from '../lib/file/ifExists';
 import {isTV} from '../lib/tv';
 import {useEpisodes, useStreamData} from '../lib/hooks/useEpisodes';
-import SkeletonLoader from './Skeleton';
+import EpisodeListSkeleton from './EpisodeListSkeleton';
 import DropdownField from './ui/DropdownField';
 import {
   createDesktopCompatibleFileName,
@@ -74,6 +71,11 @@ import EpisodeSelectionBar, {
   EpisodeSelectCheck,
 } from './season/EpisodeSelectionBar';
 import {useEpisodeSelection} from './season/useEpisodeSelection';
+import {queueQuickDownload} from '../lib/quickDownload';
+import {ensureDownloadLocationAccess} from '../lib/downloadLocation';
+import {EpisodeLinkTarget} from '../lib/episodeLinks';
+import {Stream} from '../lib/providers/types';
+import {CURRENT_DOWNLOAD_STATUSES} from '../lib/zustand/downloadsStore';
 
 const CONTROL_TEXT = '#F5F0EF';
 const CONTROL_TEXT_MUTED = '#D4CBC9';
@@ -227,7 +229,6 @@ interface EpisodeCardRowProps {
 const EpisodeCardRow: React.FC<EpisodeCardRowProps> = ({
   item,
   index,
-  isFirst,
   isCompleted,
   isSticky,
   onPress,
@@ -412,6 +413,10 @@ const ServerRowItem = ({
   return (
     <TVFocusable
       key={`server-${index}-${item.server}`}
+      hasTVPreferredFocus={index === 0}
+      registerScreenFocus={false}
+      accessibilityRole="button"
+      accessibilityLabel={item.server || `Server ${index + 1}`}
       onFocus={() => setTvFocused(true)}
       onBlur={() => setTvFocused(false)}
       focusBorderColor={focusBorderColor}
@@ -564,7 +569,6 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
 
   // Search and sorting state - memoized initial values
   const [searchText, setSearchText] = useState<string>('');
-  const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() =>
     mainStorage.getString(episodeSortOrderKey) === 'desc' ? 'desc' : 'asc',
   );
@@ -709,10 +713,88 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
       fetchStreams(link, type, providerValue, {signal, isDownload: true}),
     [fetchStreams, type, providerValue],
   );
+  const prepareSelectedDownloads = useCallback(async () => {
+    const location = await ensureDownloadLocationAccess(
+      settingsStorage.getDownloadLocationConfig(),
+    );
+    if (!location) return false;
+    settingsStorage.setDownloadLocation(location);
+    return true;
+  }, []);
+  const downloadSelectedEpisode = useCallback(
+    async (episode: EpisodeLinkTarget, stream: Stream, signal: AbortSignal) => {
+      const direct = !validEpisodes.some(item => item.link === episode.link);
+      const list = direct ? activeSeason.directLinks : episodeList;
+      const index = getOriginalLinkIndex(list, episode.link, 0);
+      const downloadId = (
+        direct ? createDirectDownloadId : createSeriesDownloadId
+      )(metaTitle, activeSeason.title, index);
+      const downloads = Object.values(useDownloadsStore.getState().downloads);
+      const existing = downloads.find(
+        item =>
+          !item.isSubtitle &&
+          (item.id === downloadId ||
+            (item.infoUrl === routeParams.link &&
+              item.sourceLink === episode.link)),
+      );
+      if (
+        existing &&
+        (existing.status === 'completed' ||
+          CURRENT_DOWNLOAD_STATUSES.has(existing.status))
+      )
+        return false;
+      const item = episode as EpisodeLink;
+      await queueQuickDownload(
+        {
+          downloadId,
+          title: `${metaTitle.length > 30 ? metaTitle.slice(0, 30) + '...' : metaTitle} ${episode.title}`,
+          showName: metaTitle,
+          episodeName: episode.title,
+          seasonTitle: activeSeason.title,
+          episodeIndex: index,
+          mediaType: direct && !isTV && (item as any).type !== 'series' ? 'movie' : 'series',
+          imdbId,
+          poster: poster.poster,
+          background: poster.background,
+          synopsis,
+          provider: providerValue,
+          infoUrl: routeParams.link,
+          sourceLink: episode.link,
+          skip: item.skip || (item as any).skips,
+          fileName:
+            direct &&
+            (item as any).type !== 'series' &&
+            (activeSeason.directLinks?.length || 0) <= 1
+              ? createDesktopCompatibleFileName(metaTitle, 'movie')
+              : createDesktopCompatibleFileName(
+                  `${metaTitle} ${episode.title}`,
+                  'series',
+                ),
+          deleteDownload: () => {},
+        },
+        stream,
+        signal,
+      );
+      return true;
+    },
+    [
+      activeSeason,
+      episodeList,
+      validEpisodes,
+      metaTitle,
+      routeParams.link,
+      imdbId,
+      poster,
+      synopsis,
+      providerValue,
+    ],
+  );
   const selection = useEpisodeSelection({
     items: selectableItems,
     resetKey: activeSeason?.episodesLink || activeSeason?.title,
     fetchStreams: fetchDownloadStreams,
+    prepareDownloads: prepareSelectedDownloads,
+    downloadEpisode: downloadSelectedEpisode,
   });
 
   // Memoized completion checker
@@ -1595,17 +1677,7 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
           />
         )}
 
-        <View
-          style={{
-            width: '100%',
-            padding: 10,
-            alignItems: 'flex-start',
-            gap: 20,
-          }}>
-          {[...Array(6)].map((_, index) => (
-            <SkeletonLoader key={index} show={true} height={48} width={'85%'} />
-          ))}
-        </View>
+        <EpisodeListSkeleton />
       </View>
     );
   }
@@ -1681,6 +1753,7 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
             onExit={selection.exit}
             onToggleSelectAll={selection.toggleAll}
             onCopyLinks={selection.copyLinks}
+            onDownload={selection.downloadSelected}
             onCancelCopy={selection.cancelCopy}
           />
         )}
@@ -1861,7 +1934,7 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
           <LoadingIndicator size={40} color={primary} />
         ) : (
           <>
-            <ScrollView style={{maxHeight: 300}}>
+            <ScrollView focusable={false} style={{maxHeight: 300}}>
               {externalPlayerStreams.map((item, index) =>
                 renderServerItem(item, index),
               )}
@@ -1877,6 +1950,8 @@ const SeasonListContent: React.FC<SeasonListProps> = ({
             <TVFocusable
               accessibilityRole="button"
               accessibilityLabel="Cancel"
+              hasTVPreferredFocus={externalPlayerStreams.length === 0}
+              registerScreenFocus={false}
               borderRadius={18}
               focusScale={1}
               focusBorderColor={focusBorderColor}

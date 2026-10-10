@@ -1,3 +1,4 @@
+import {scheduleWhenIdle} from '../lib/performance/idleWork';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
@@ -78,10 +79,7 @@ const Library = () => {
   const [activeChipNode, setActiveChipNode] = useState<number | null>(null);
 
   const updateNode = useCallback(
-    (
-      ref: React.RefObject<View | null>,
-      setNode: (handle: number) => void,
-    ) => {
+    (ref: React.RefObject<View | null>, setNode: (handle: number) => void) => {
       if (ref.current) {
         const handle = findNodeHandle(ref.current);
         if (handle) {
@@ -164,7 +162,7 @@ const Library = () => {
       if (!isTV) return;
       const handle =
         visibleItems.length > 0
-          ? firstCardNode ?? activeChipNode
+          ? (firstCardNode ?? activeChipNode)
           : activeChipNode;
       useTVNavigationStore.getState().setActiveScreenFocusHandle(handle);
       // The card focused before opening Info restores itself on return.
@@ -179,9 +177,7 @@ const Library = () => {
 
   useFocusEffect(
     useCallback(() => {
-      syncFromSharedFolder().catch(e =>
-        console.warn('[VegaSync] Library sync failed:', e),
-      );
+      return scheduleWhenIdle(() => syncFromSharedFolder());
     }, []),
   );
 
@@ -316,7 +312,9 @@ const Library = () => {
   const targetItemWidth = isTV ? 160 : 100;
   const numColumns = Math.max(
     1,
-    Math.floor((availableWidth + itemSpacing) / (targetItemWidth + itemSpacing)),
+    Math.floor(
+      (availableWidth + itemSpacing) / (targetItemWidth + itemSpacing),
+    ),
   );
   const itemWidth =
     (availableWidth - itemSpacing * (numColumns - 1)) / numColumns;
@@ -471,7 +469,11 @@ const Library = () => {
       trapFocusRight={true}
       trapFocusDown={true}
       trapFocusUp={true}
-      style={{flex: 1, backgroundColor: colors.background, paddingTop: isTV ? 0 : insets.top}}>
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        paddingTop: isTV ? 0 : insets.top,
+      }}>
       <StatusBar />
 
       {/* Top Selection Header Toolbar */}
@@ -571,7 +573,8 @@ const Library = () => {
                 className="text-m3-on-background">
                 Library
               </AppText>
-              <View style={{alignItems: 'center', flexDirection: 'row', gap: 8}}>
+              <View
+                style={{alignItems: 'center', flexDirection: 'row', gap: 8}}>
                 {editableCollection ? (
                   <TVFocusable
                     accessibilityRole="button"
@@ -657,7 +660,10 @@ const Library = () => {
                   selected={selectedLinks.has(item.link)}
                   selectionMode={isSelectionMode}
                   hasTVPreferredFocus={
-                    isTV && !isSelectionMode && index === 0 && !initialCardFocused
+                    isTV &&
+                    !isSelectionMode &&
+                    index === 0 &&
+                    !initialCardFocused
                   }
                   onFocus={
                     initialCardFocused
@@ -674,7 +680,10 @@ const Library = () => {
                 />
               );
             }}
-            keyExtractor={(item, index) => item.link + index}
+            keyExtractor={item => JSON.stringify([item.provider, item.link])}
+            windowSize={isTV ? 21 : 7}
+            maxToRenderPerBatch={isTV ? 10 : 8}
+            initialNumToRender={isTV ? 10 : numColumns * 4}
             numColumns={numColumns}
             columnWrapperStyle={
               numColumns > 1
@@ -758,11 +767,18 @@ const Library = () => {
                 borderRadius={18}
                 focusScale={1.1}
                 focusBorderColor={focusBorderColor}
-                style={{...iconButtonStyle, borderRadius: 18, minHeight: 36, minWidth: 36}}>
+                style={{
+                  ...iconButtonStyle,
+                  borderRadius: 18,
+                  minHeight: 36,
+                  minWidth: 36,
+                }}>
                 <MaterialIcons
                   name="select-all"
                   size={24}
-                  color={isAllSelected ? colors.primary : colors.onSurfaceVariant}
+                  color={
+                    isAllSelected ? colors.primary : colors.onSurfaceVariant
+                  }
                 />
               </TVFocusable>
               <TVFocusable
@@ -772,7 +788,12 @@ const Library = () => {
                 borderRadius={18}
                 focusScale={1.1}
                 focusBorderColor={focusBorderColor}
-                style={{...iconButtonStyle, borderRadius: 18, minHeight: 36, minWidth: 36}}>
+                style={{
+                  ...iconButtonStyle,
+                  borderRadius: 18,
+                  minHeight: 36,
+                  minWidth: 36,
+                }}>
                 <MaterialCommunityIcons
                   name="select-inverse"
                   size={24}

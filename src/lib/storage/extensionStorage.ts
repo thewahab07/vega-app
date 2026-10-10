@@ -66,6 +66,27 @@ export enum ExtensionKeys {
  * Extension storage manager
  */
 export class ExtensionStorage {
+  private modulesRevision: number | undefined;
+  private readonly modulesByProvider = new Map<string, ProviderModule[]>();
+
+  private getIndexedModules(providerValue: string): ProviderModule[] {
+    const revision = mainStorage.getRevision?.(ExtensionKeys.PROVIDER_MODULES);
+    // Unknown storage implementations retain their original read semantics.
+    if (revision === undefined || revision !== this.modulesRevision) {
+      this.modulesByProvider.clear();
+      const modules =
+        mainStorage.getArray<ProviderModule>(ExtensionKeys.PROVIDER_MODULES) ||
+        [];
+      for (const module of modules) {
+        const matches = this.modulesByProvider.get(module.value);
+        if (matches) matches.push(module);
+        else this.modulesByProvider.set(module.value, [module]);
+      }
+      this.modulesRevision = revision;
+    }
+    return this.modulesByProvider.get(providerValue) || [];
+  }
+
   private normalizeUrl(url: string): string {
     return url.trim().replace(/\/+$/, '');
   }
@@ -317,10 +338,7 @@ export class ExtensionStorage {
     providerValue: string,
     sourceAuthor?: string,
   ): ProviderModule | undefined {
-    const allModules =
-      mainStorage.getArray<ProviderModule>(ExtensionKeys.PROVIDER_MODULES) ||
-      [];
-    const providerMatches = allModules.filter(m => m.value === providerValue);
+    const providerMatches = this.getIndexedModules(providerValue);
 
     if (providerMatches.length === 0) {
       return undefined;

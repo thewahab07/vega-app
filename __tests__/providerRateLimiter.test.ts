@@ -2,6 +2,24 @@ import {describe, expect, it} from '@jest/globals';
 import {DomainRateLimiter} from '../src/lib/sandbox/rateLimiter';
 
 describe('DomainRateLimiter', () => {
+  it('removes an aborted waiter without leaking reserved capacity', async () => {
+    const limiter = new DomainRateLimiter({burst: 10, maxConcurrentPerHost: 1});
+    const release = await limiter.acquire('example.com');
+    const controller = new AbortController();
+    const pending = limiter.acquire('example.com', controller.signal);
+    const outcome = expect(pending).rejects.toMatchObject({name: 'AbortError'});
+    controller.abort();
+    await outcome;
+    expect(limiter.snapshot('example.com')).toMatchObject({
+      active: 1,
+      queued: 0,
+    });
+    release();
+    const next = await limiter.acquire('example.com');
+    expect(limiter.snapshot('example.com').active).toBe(1);
+    next();
+  });
+
   it('allows requests up to the burst allowance immediately', async () => {
     const limiter = new DomainRateLimiter({burst: 3, requestsPerSecond: 1});
 

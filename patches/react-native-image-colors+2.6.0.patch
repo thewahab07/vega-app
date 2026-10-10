@@ -1,96 +1,3 @@
-diff --git a/node_modules/react-native-image-colors/android/.classpath b/node_modules/react-native-image-colors/android/.classpath
-new file mode 100644
-index 0000000..0a3280e
---- /dev/null
-+++ b/node_modules/react-native-image-colors/android/.classpath
-@@ -0,0 +1,6 @@
-+<?xml version="1.0" encoding="UTF-8"?>
-+<classpath>
-+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-21/"/>
-+	<classpathentry kind="con" path="org.eclipse.buildship.core.gradleclasspathcontainer"/>
-+	<classpathentry kind="output" path="bin/default"/>
-+</classpath>
-diff --git a/node_modules/react-native-image-colors/android/.gradle/8.9/checksums/checksums.lock b/node_modules/react-native-image-colors/android/.gradle/8.9/checksums/checksums.lock
-new file mode 100644
-index 0000000..51917e9
-Binary files /dev/null and b/node_modules/react-native-image-colors/android/.gradle/8.9/checksums/checksums.lock differ
-diff --git a/node_modules/react-native-image-colors/android/.gradle/8.9/dependencies-accessors/gc.properties b/node_modules/react-native-image-colors/android/.gradle/8.9/dependencies-accessors/gc.properties
-new file mode 100644
-index 0000000..e69de29
-diff --git a/node_modules/react-native-image-colors/android/.gradle/8.9/fileChanges/last-build.bin b/node_modules/react-native-image-colors/android/.gradle/8.9/fileChanges/last-build.bin
-new file mode 100644
-index 0000000..f76dd23
-Binary files /dev/null and b/node_modules/react-native-image-colors/android/.gradle/8.9/fileChanges/last-build.bin differ
-diff --git a/node_modules/react-native-image-colors/android/.gradle/8.9/fileHashes/fileHashes.lock b/node_modules/react-native-image-colors/android/.gradle/8.9/fileHashes/fileHashes.lock
-new file mode 100644
-index 0000000..9010fd0
-Binary files /dev/null and b/node_modules/react-native-image-colors/android/.gradle/8.9/fileHashes/fileHashes.lock differ
-diff --git a/node_modules/react-native-image-colors/android/.gradle/8.9/gc.properties b/node_modules/react-native-image-colors/android/.gradle/8.9/gc.properties
-new file mode 100644
-index 0000000..e69de29
-diff --git a/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/buildOutputCleanup.lock b/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
-new file mode 100644
-index 0000000..4b8ee31
-Binary files /dev/null and b/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/buildOutputCleanup.lock differ
-diff --git a/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/cache.properties b/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/cache.properties
-new file mode 100644
-index 0000000..16a6d50
---- /dev/null
-+++ b/node_modules/react-native-image-colors/android/.gradle/buildOutputCleanup/cache.properties
-@@ -0,0 +1,2 @@
-+#Thu Aug 20 23:22:39 IST 2026
-+gradle.version=8.9
-diff --git a/node_modules/react-native-image-colors/android/.gradle/vcs-1/gc.properties b/node_modules/react-native-image-colors/android/.gradle/vcs-1/gc.properties
-new file mode 100644
-index 0000000..e69de29
-diff --git a/node_modules/react-native-image-colors/android/.project b/node_modules/react-native-image-colors/android/.project
-new file mode 100644
-index 0000000..650ba02
---- /dev/null
-+++ b/node_modules/react-native-image-colors/android/.project
-@@ -0,0 +1,34 @@
-+<?xml version="1.0" encoding="UTF-8"?>
-+<projectDescription>
-+	<name>react-native-image-colors</name>
-+	<comment>Project react-native-image-colors created by Buildship.</comment>
-+	<projects>
-+	</projects>
-+	<buildSpec>
-+		<buildCommand>
-+			<name>org.eclipse.jdt.core.javabuilder</name>
-+			<arguments>
-+			</arguments>
-+		</buildCommand>
-+		<buildCommand>
-+			<name>org.eclipse.buildship.core.gradleprojectbuilder</name>
-+			<arguments>
-+			</arguments>
-+		</buildCommand>
-+	</buildSpec>
-+	<natures>
-+		<nature>org.eclipse.jdt.core.javanature</nature>
-+		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
-+	</natures>
-+	<filteredResources>
-+		<filter>
-+			<id>1787207155754</id>
-+			<name></name>
-+			<type>30</type>
-+			<matcher>
-+				<id>org.eclipse.core.resources.regexFilterMatcher</id>
-+				<arguments>node_modules|\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__</arguments>
-+			</matcher>
-+		</filter>
-+	</filteredResources>
-+</projectDescription>
-diff --git a/node_modules/react-native-image-colors/android/.settings/org.eclipse.buildship.core.prefs b/node_modules/react-native-image-colors/android/.settings/org.eclipse.buildship.core.prefs
-new file mode 100644
-index 0000000..1675490
---- /dev/null
-+++ b/node_modules/react-native-image-colors/android/.settings/org.eclipse.buildship.core.prefs
-@@ -0,0 +1,2 @@
-+connection.project.dir=../../../android
-+eclipse.preferences.version=1
 diff --git a/node_modules/react-native-image-colors/android/build.gradle b/node_modules/react-native-image-colors/android/build.gradle
 index 25d0f74..3e47f58 100644
 --- a/node_modules/react-native-image-colors/android/build.gradle
@@ -118,10 +25,108 @@ index 25d0f74..3e47f58 100644
  
    defaultConfig {
 diff --git a/node_modules/react-native-image-colors/android/src/main/java/com/reactnativeimagecolors/ImageColorsModule.kt b/node_modules/react-native-image-colors/android/src/main/java/com/reactnativeimagecolors/ImageColorsModule.kt
-index 302ca19..a7ca77b 100644
+index 302ca19..f745f21 100644
 --- a/node_modules/react-native-image-colors/android/src/main/java/com/reactnativeimagecolors/ImageColorsModule.kt
 +++ b/node_modules/react-native-image-colors/android/src/main/java/com/reactnativeimagecolors/ImageColorsModule.kt
-@@ -157,6 +157,9 @@ class ImageColorsModule : Module() {
+@@ -22,6 +22,8 @@ import kotlinx.coroutines.*
+ import kotlin.math.ceil
+ 
+ import java.net.MalformedURLException
++import java.io.BufferedInputStream
++import java.io.InputStream
+ import java.net.URI
+ 
+ class Config : Record {
+@@ -38,6 +40,37 @@ class Config : Record {
+ class ImageColorsModule : Module() {
+   private val service = CoroutineScope(Dispatchers.IO)
+ 
++  private fun thumbnailOptions(bounds: BitmapFactory.Options): BitmapFactory.Options {
++    var sample = 1
++    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 128) sample *= 2
++    return BitmapFactory.Options().apply { inSampleSize = sample }
++  }
++
++  private fun shrinkThumbnail(bitmap: Bitmap?): Bitmap? {
++    if (bitmap == null || maxOf(bitmap.width, bitmap.height) <= 64) return bitmap
++    val scale = 64.0 / maxOf(bitmap.width, bitmap.height)
++    val result = Bitmap.createScaledBitmap(bitmap, maxOf(1, (bitmap.width * scale).toInt()), maxOf(1, (bitmap.height * scale).toInt()), true)
++    if (result !== bitmap) bitmap.recycle()
++    return result
++  }
++
++  private fun decodeThumbnail(decode: (BitmapFactory.Options) -> Bitmap?): Bitmap? {
++    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
++    decode(bounds)
++    return shrinkThumbnail(decode(thumbnailOptions(bounds)))
++  }
++
++  private fun decodeThumbnailStream(stream: InputStream): Bitmap? {
++    BufferedInputStream(stream).use { buffered ->
++      // A bounded rewind buffer permits one HTTP download for bounds + pixels.
++      buffered.mark(1024 * 1024)
++      val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
++      BitmapFactory.decodeStream(buffered, null, bounds)
++      buffered.reset()
++      return shrinkThumbnail(BitmapFactory.decodeStream(buffered, null, thumbnailOptions(bounds)))
++    }
++  }
++
+   /**
+    * pixelSpacing tells how many pixels to skip each pixel.
+    * If pixelSpacing > 1: the average color is an estimate, but higher values mean better performance.
+@@ -45,7 +78,7 @@ class ImageColorsModule : Module() {
+    * If pixelSpacing < 1: the method will most likely crash (don't use values below 1).
+    */
+   private fun calculateAverageColor(bitmap: Bitmap, pixelSpacing: Int): Int {
+-    val segmentWidth = 500
++    val segmentWidth = minOf(500, bitmap.width)
+ 
+     val width = bitmap.width
+     val height = bitmap.height
+@@ -117,7 +150,7 @@ class ImageColorsModule : Module() {
+ 
+           // check if local resource
+           if (context != null && resourceId != 0) {
+-            image = BitmapFactory.decodeResource(context.resources, resourceId)
++            image = decodeThumbnail { options -> BitmapFactory.decodeResource(context.resources, resourceId, options) }
+           }
+ 
+           // check if base64
+@@ -130,12 +163,14 @@ class ImageColorsModule : Module() {
+               val svg = AndroidSVG.getFromString(svgString)
+               val width = if (svg.documentWidth > 0) svg.documentWidth.toInt() else 200
+               val height = if (svg.documentHeight > 0) svg.documentHeight.toInt() else 200
+-              val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
++              val scale = minOf(1.0, 64.0 / maxOf(width, height))
++              val bitmap = Bitmap.createBitmap(maxOf(1, (width * scale).toInt()), maxOf(1, (height * scale).toInt()), Bitmap.Config.ARGB_8888)
+               val canvas = Canvas(bitmap)
++              canvas.scale(scale.toFloat(), scale.toFloat())
+               svg.renderToCanvas(canvas)
+               image = bitmap
+             } else {
+-              image = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
++              image = decodeThumbnail { options -> BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size, options) }
+             }
+           }
+ 
+@@ -143,20 +178,23 @@ class ImageColorsModule : Module() {
+           if (uri.startsWith("content")) {
+             val contentUri = Uri.parse(uri)
+             val stream = context?.contentResolver?.openInputStream(contentUri)
+-            image = BitmapFactory.decodeStream(stream)
++            image = stream?.let { decodeThumbnailStream(it) }
+             stream?.close()
+           }
+           
+           // check if local file URI or absolute path
+           if (uri.startsWith("file://") || uri.startsWith("/")) {
+             val filePath = if (uri.startsWith("file://")) Uri.parse(uri).path else uri
+-            image = BitmapFactory.decodeFile(filePath)
++            image = decodeThumbnail { options -> BitmapFactory.decodeFile(filePath, options) }
+           }
+ 
+           // check if valid URL (http/https)
            if (uri.startsWith("http")) {
              val parsedUri = URI(uri)
              val connection = parsedUri.toURL().openConnection()
@@ -131,15 +136,12 @@ index 302ca19..a7ca77b 100644
  
              if (config.headers != null) {
                for (header in config.headers) {
-@@ -165,7 +168,10 @@ class ImageColorsModule : Module() {
+@@ -165,7 +203,7 @@ class ImageColorsModule : Module() {
              }
  
              val stream = connection.getInputStream()
 -            image = BitmapFactory.decodeStream(stream)
-+            val options = BitmapFactory.Options().apply {
-+              inSampleSize = 2
-+            }
-+            image = BitmapFactory.decodeStream(stream, null, options)
++            image = decodeThumbnailStream(stream)
              stream.close()
            }
  

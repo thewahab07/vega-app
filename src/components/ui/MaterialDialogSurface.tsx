@@ -1,10 +1,11 @@
 import {BasicAlertDialog, Host, RNHostView} from '@expo/ui/jetpack-compose';
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {
   BackHandler,
   Modal,
   Pressable,
   StyleSheet,
+  TVFocusGuideView,
   View,
   ViewStyle,
 } from 'react-native';
@@ -28,6 +29,7 @@ const MaterialDialogSurface = ({
 }: MaterialDialogSurfaceProps) => {
   const colors = useM3Colors();
   const hostTheme = useM3HostTheme();
+  const dialogFocusRef = useRef<React.ElementRef<typeof TVFocusGuideView>>(null);
 
   useEffect(() => {
     if (!isTV || !visible || !dismissible) return;
@@ -48,6 +50,7 @@ const MaterialDialogSurface = ({
         visible={visible}
         transparent
         animationType="fade"
+        onShow={() => dialogFocusRef.current?.requestTVFocus()}
         onRequestClose={() => {
           if (dismissible) onDismiss();
         }}>
@@ -61,11 +64,19 @@ const MaterialDialogSurface = ({
           }}>
           {dismissible && (
             <Pressable
+              focusable={false}
+              accessible={false}
               style={StyleSheet.absoluteFill}
               onPress={onDismiss}
             />
           )}
-          <View
+          <TVFocusGuideView
+            ref={dialogFocusRef}
+            autoFocus
+            trapFocusUp
+            trapFocusDown
+            trapFocusLeft
+            trapFocusRight
             style={[
               {
                 backgroundColor: '#1E1E1E',
@@ -81,7 +92,7 @@ const MaterialDialogSurface = ({
               style,
             ]}>
             {children}
-          </View>
+          </TVFocusGuideView>
         </View>
       </Modal>
     );

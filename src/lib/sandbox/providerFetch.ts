@@ -14,6 +14,9 @@ import {
   type SerializedResponse,
 } from './protocol';
 import {isPrivateHostname, validateProviderUrl} from './urlGuard';
+import {throwIfProviderAborted} from './abort';
+
+let nextRequestId = 0;
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REDIRECTS = 10;
@@ -112,14 +115,24 @@ export const providerFetch = async (
   author: string,
   rawUrl: unknown,
   request: SerializedRequest,
+  signal?: AbortSignal,
 ): Promise<SerializedResponse> => {
+  throwIfProviderAborted(signal);
   const url = validateProviderUrl(rawUrl);
   // Timings for finding where a slow source spends its time.
   const queuedAt = Date.now();
-  const release = await providerRateLimiter.acquire(url.hostname);
+  const release = await providerRateLimiter.acquire(url.hostname, signal);
   const startedAt = Date.now();
+  const abortController = new AbortController();
+  const requestId = `provider-http-${++nextRequestId}`;
+  const onAbort = () => {
+    abortController.abort();
+    NativeModules.ProviderHttpModule?.cancel?.(requestId);
+  };
+  signal?.addEventListener('abort', onAbort, {once: true});
 
   try {
+    throwIfProviderAborted(signal);
     const headers = normalizeHeaders(request.headers ?? []);
     const body = request.body ?? {kind: 'none'};
     if (
@@ -152,12 +165,14 @@ export const providerFetch = async (
       let method = (request.method || 'GET').toUpperCase();
       let hopBody = body;
       for (let redirects = 0; ; redirects++) {
+        throwIfProviderAborted(signal);
         const headerPairs: Array<[string, string]> = Object.entries(headers);
         const options: Record<string, any> = {
           method,
           headers: headerPairs,
           redirect: 'manual',
           timeoutMs: REQUEST_TIMEOUT_MS,
+          requestId,
         };
         if (hopBody.kind === 'base64') {
           options.bodyBase64 = hopBody.value;
@@ -170,6 +185,7 @@ export const providerFetch = async (
           hopUrl.toString(),
           options,
         );
+        throwIfProviderAborted(signal);
         console.log(
           `[ProviderPerf] fetch ${hopUrl.hostname} ${res.status} wait=${
             startedAt - queuedAt
@@ -240,15 +256,16 @@ export const providerFetch = async (
         if (nextUrl.host !== hopUrl.host) {
           deleteHeader(headers, 'authorization');
         }
-        const hopCookie = nextUrl.hostname === hopUrl.hostname
-          ? updateRedirectCookieHeader(
-              hopUrl.toString(),
-              headers.Cookie,
-              ((res.cookies || []) as Array<[string, string]>)
-                .filter(pair => pair && pair.length >= 2)
-                .map(pair => pair[1]),
-            )
-          : buildRequestCookieHeader(author, nextUrl.toString());
+        const hopCookie =
+          nextUrl.hostname === hopUrl.hostname
+            ? updateRedirectCookieHeader(
+                hopUrl.toString(),
+                headers.Cookie,
+                ((res.cookies || []) as Array<[string, string]>)
+                  .filter(pair => pair && pair.length >= 2)
+                  .map(pair => pair[1]),
+              )
+            : buildRequestCookieHeader(author, nextUrl.toString());
         deleteHeader(headers, 'cookie');
         if (hopCookie) {
           headers.Cookie = hopCookie;
@@ -257,10 +274,8 @@ export const providerFetch = async (
       }
     }
 
-    const abortController = new AbortController();
     const isManualRedirect = request.redirect === 'manual';
     let abortedEarly = false;
-    let interceptedResponseUrl = '';
 
     const config: AxiosRequestConfig = {
       url: url.toString(),
@@ -279,10 +294,6 @@ export const providerFetch = async (
       validateStatus: () => true,
       transformResponse: [],
       onDownloadProgress: (progressEvent: any) => {
-        const xhr = progressEvent.target || progressEvent.currentTarget;
-        if (xhr?.responseURL) {
-          interceptedResponseUrl = xhr.responseURL;
-        }
         if (
           (isManualRedirect && progressEvent.loaded > 0) ||
           progressEvent.loaded > MAX_RESPONSE_BYTES ||
@@ -298,7 +309,13 @@ export const providerFetch = async (
     try {
       response = await axios.request(config);
     } catch (err: any) {
-      if (axios.isCancel(err) || err.name === 'CanceledError' || err.name === 'AbortError' || abortedEarly) {
+      throwIfProviderAborted(signal);
+      if (
+        axios.isCancel(err) ||
+        err.name === 'CanceledError' ||
+        err.name === 'AbortError' ||
+        abortedEarly
+      ) {
         abortedEarly = true;
         response = err.response || {
           status: isManualRedirect ? 302 : 200,
@@ -311,6 +328,7 @@ export const providerFetch = async (
         throw err;
       }
     }
+    throwIfProviderAborted(signal);
 
     const finalUrl: string =
       (response.request?.responseURL as string | undefined) || url.toString();
@@ -341,7 +359,11 @@ export const providerFetch = async (
     }
 
     const resHeaders = flattenResponseHeaders(response.headers);
-    if (isManualRedirect && finalUrl && !resHeaders.some(([k]) => k.toLowerCase() === 'location')) {
+    if (
+      isManualRedirect &&
+      finalUrl &&
+      !resHeaders.some(([k]) => k.toLowerCase() === 'location')
+    ) {
       resHeaders.push(['location', finalUrl]);
     }
 
@@ -353,6 +375,7 @@ export const providerFetch = async (
       bodyBase64: bytesToBase64(bytes),
     };
   } finally {
+    signal?.removeEventListener('abort', onAbort);
     release();
   }
 };

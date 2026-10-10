@@ -1,13 +1,14 @@
+import {registerInteractionCommit} from '../../lib/performance/idleWork';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Host, Slider } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth } from '@expo/ui/jetpack-compose/modifiers';
-import React, { useCallback, useRef } from 'react';
-import { View, findNodeHandle } from 'react-native';
+import {Host, Slider} from '@expo/ui/jetpack-compose';
+import {fillMaxWidth} from '@expo/ui/jetpack-compose/modifiers';
+import React, {useCallback, useRef} from 'react';
+import {View, findNodeHandle} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
-import { settingsStorage } from '../../lib/storage';
-import { useM3Colors, useM3HostTheme } from '../../theme/M3PaletteContext';
-import { isTV } from '../../lib/tv';
-import { TVFocusable } from '../tv/TVFocusable';
+import {settingsStorage} from '../../lib/storage';
+import {useM3Colors, useM3HostTheme} from '../../theme/M3PaletteContext';
+import {isTV} from '../../lib/tv';
+import {TVFocusable} from '../tv/TVFocusable';
 import AppText from './Text';
 
 interface SettingsSliderRowProps {
@@ -48,8 +49,12 @@ const SettingsSliderRow = ({
   const prevValueRef = useRef(value);
   const decreaseRef = useRef<View>(null);
   const increaseRef = useRef<View>(null);
-  const [decreaseHandle, setDecreaseHandle] = React.useState<number | null>(null);
-  const [increaseHandle, setIncreaseHandle] = React.useState<number | null>(null);
+  const [decreaseHandle, setDecreaseHandle] = React.useState<number | null>(
+    null,
+  );
+  const [increaseHandle, setIncreaseHandle] = React.useState<number | null>(
+    null,
+  );
 
   // In Android Jetpack Compose Slider:
   // steps = number of discrete intervals between min and max.
@@ -68,16 +73,31 @@ const SettingsSliderRow = ({
     }
   }, []);
 
+  const dirtyRef = useRef(false);
+  const finishRef = useRef(onValueChangeFinished);
+  React.useEffect(() => {
+    if (!dirtyRef.current) prevValueRef.current = value;
+  }, [value]);
+  React.useEffect(() => {
+    finishRef.current = onValueChangeFinished;
+  }, [onValueChangeFinished]);
+  const commitValue = useCallback(() => {
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    finishRef.current?.(prevValueRef.current);
+  }, []);
+  React.useEffect(() => registerInteractionCommit(commitValue), [commitValue]);
+
   const handleValueChange = useCallback(
     (v: number) => {
       let next = v;
       if (step && step > 0) {
-        next = Math.round((v - min) / step) * step + min;
+        next = Number((Math.round((v - min) / step) * step + min).toFixed(6));
       }
-      if (next !== prevValueRef.current) {
-        prevValueRef.current = next;
-        triggerHaptic();
-      }
+      if (next === prevValueRef.current) return;
+      prevValueRef.current = next;
+      dirtyRef.current = true;
+      triggerHaptic();
       onValueChange(next);
     },
     [min, step, onValueChange, triggerHaptic],
@@ -85,8 +105,8 @@ const SettingsSliderRow = ({
 
   const handleValueChangeFinished = useCallback(() => {
     triggerHaptic();
-    onValueChangeFinished?.(prevValueRef.current);
-  }, [triggerHaptic, onValueChangeFinished]);
+    commitValue();
+  }, [triggerHaptic, commitValue]);
 
   const display = valueDisplay !== undefined ? valueDisplay : value;
 
@@ -102,7 +122,7 @@ const SettingsSliderRow = ({
           {icon ? (
             <View
               className="mr-4 h-10 w-10 items-center justify-center rounded-full"
-              style={{ backgroundColor: colors.secondaryContainer }}>
+              style={{backgroundColor: colors.secondaryContainer}}>
               <MaterialCommunityIcons
                 name={icon}
                 size={21}
@@ -126,10 +146,10 @@ const SettingsSliderRow = ({
         </View>
         <View
           className="items-center rounded-full px-2.5 py-1"
-          style={{ backgroundColor: colors.surfaceContainerHighest }}>
+          style={{backgroundColor: colors.surfaceContainerHighest}}>
           <AppText
             role="titleSmall"
-            style={{ color: colors.primary, fontWeight: '700' }}>
+            style={{color: colors.primary, fontWeight: '700'}}>
             {display}
           </AppText>
           {/* Zero-height copy of the widest value: keeps the chip at least that
@@ -137,17 +157,25 @@ const SettingsSliderRow = ({
           <AppText
             role="titleSmall"
             aria-hidden
-            style={{ fontWeight: '700', height: 0, opacity: 0 }}>
+            style={{fontWeight: '700', height: 0, opacity: 0}}>
             {widestValue ?? String(max)}
           </AppText>
         </View>
       </View>
       <View className="mt-2 w-full">
         {isTV ? (
-          <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6}}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingVertical: 6,
+            }}>
             <TVFocusable
               ref={decreaseRef}
-              onLayout={() => setDecreaseHandle(findNodeHandle(decreaseRef.current))}
+              onLayout={() =>
+                setDecreaseHandle(findNodeHandle(decreaseRef.current))
+              }
               nextFocusRight={increaseHandle}
               onPress={() => {
                 const s = step && step > 0 ? step : 1;
@@ -167,10 +195,22 @@ const SettingsSliderRow = ({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-              <MaterialCommunityIcons name="minus" size={24} color={colors.onSurface} />
+              <MaterialCommunityIcons
+                name="minus"
+                size={24}
+                color={colors.onSurface}
+              />
             </TVFocusable>
 
-            <View style={{flex: 1, marginHorizontal: 16, height: 8, backgroundColor: colors.surfaceContainerHighest, borderRadius: 4, overflow: 'hidden'}}>
+            <View
+              style={{
+                flex: 1,
+                marginHorizontal: 16,
+                height: 8,
+                backgroundColor: colors.surfaceContainerHighest,
+                borderRadius: 4,
+                overflow: 'hidden',
+              }}>
               <View
                 style={{
                   height: '100%',
@@ -183,7 +223,9 @@ const SettingsSliderRow = ({
 
             <TVFocusable
               ref={increaseRef}
-              onLayout={() => setIncreaseHandle(findNodeHandle(increaseRef.current))}
+              onLayout={() =>
+                setIncreaseHandle(findNodeHandle(increaseRef.current))
+              }
               nextFocusLeft={decreaseHandle}
               onPress={() => {
                 const s = step && step > 0 ? step : 1;
@@ -203,13 +245,17 @@ const SettingsSliderRow = ({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-              <MaterialCommunityIcons name="plus" size={24} color={colors.onSurface} />
+              <MaterialCommunityIcons
+                name="plus"
+                size={24}
+                color={colors.onSurface}
+              />
             </TVFocusable>
           </View>
         ) : (
           <Host
-            matchContents={{ vertical: true }}
-            style={{ width: '100%' }}
+            matchContents={{vertical: true}}
+            style={{width: '100%'}}
             {...hostTheme}>
             <Slider
               value={value}

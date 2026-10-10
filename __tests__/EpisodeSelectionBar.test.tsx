@@ -32,6 +32,7 @@ describe('EpisodeSelectionBar', () => {
     onExit: jest.fn(),
     onToggleSelectAll: jest.fn(),
     onCopyLinks: jest.fn(),
+    onDownload: jest.fn(),
     onCancelCopy: jest.fn(),
   };
 
@@ -53,6 +54,10 @@ describe('EpisodeSelectionBar', () => {
     const copy = tree!.root.findByProps({accessibilityLabel: 'Copy links'});
     expect(copy.props.disabled).toBe(false);
     copy.props.onPress();
+    tree!.root
+      .findByProps({accessibilityLabel: 'Download selected episodes'})
+      .props.onPress();
+    expect(handlers.onDownload).toHaveBeenCalledTimes(1);
     tree!.root.findByProps({accessibilityLabel: 'Select all'}).props.onPress();
     tree!.root
       .findByProps({accessibilityLabel: 'Exit selection'})
@@ -76,6 +81,10 @@ describe('EpisodeSelectionBar', () => {
     });
     expect(
       tree!.root.findByProps({accessibilityLabel: 'Copy links'}).props.disabled,
+    ).toBe(true);
+    expect(
+      tree!.root.findByProps({accessibilityLabel: 'Download selected episodes'})
+        .props.disabled,
     ).toBe(true);
   });
 
@@ -113,6 +122,12 @@ describe('useEpisodeSelection', () => {
   const Harness = (props: {
     resetKey: string;
     fetchStreams: (link: string, signal: AbortSignal) => Promise<any>;
+    downloadEpisode?: (
+      episode: any,
+      stream: any,
+      signal: AbortSignal,
+    ) => Promise<boolean>;
+    prepareDownloads?: () => Promise<boolean>;
   }) => {
     current = useEpisodeSelection({items, ...props});
     return null;
@@ -127,6 +142,78 @@ describe('useEpisodeSelection', () => {
     toast.mockClear();
   });
   afterEach(() => jest.restoreAllMocks());
+
+  it('downloads selected episodes in season order using the first stream and continues after failure', async () => {
+    const fetchStreams = jest.fn(async (link: string) => {
+      if (link === 'ep2') throw new Error('Unavailable');
+      return [
+        {link: `https://cdn/${link}`, type: 'mp4'},
+        {link: 'https://other', type: 'mp4'},
+      ];
+    });
+    const downloadEpisode = jest.fn(async () => true);
+    await act(async () => {
+      renderer.create(
+        <Harness
+          resetKey="s1"
+          fetchStreams={fetchStreams}
+          downloadEpisode={downloadEpisode}
+        />,
+      );
+    });
+    act(() => current.start('ep3'));
+    act(() => current.toggleAll());
+    await act(async () => {
+      await current.downloadSelected();
+    });
+    expect(
+      downloadEpisode.mock.calls.map((call: any[]) => [
+        call[0].link,
+        call[1].link,
+      ]),
+    ).toEqual([
+      ['ep1', 'https://cdn/ep1'],
+      ['ep3', 'https://cdn/ep3'],
+    ]);
+    expect(toast).toHaveBeenCalledWith(
+      'Queued 2 downloads, 1 skipped',
+      ToastAndroid.LONG,
+    );
+    expect(current.progress).toBeNull();
+    expect(setString).not.toHaveBeenCalled();
+  });
+
+  it('does not queue an episode whose pending stream fetch was cancelled', async () => {
+    let release!: (streams: any[]) => void;
+    const fetchStreams = jest.fn(
+      () =>
+        new Promise<any[]>(done => {
+          release = done;
+        }),
+    );
+    const downloadEpisode = jest.fn(async () => true);
+    await act(async () => {
+      renderer.create(
+        <Harness
+          resetKey="s1"
+          fetchStreams={fetchStreams}
+          downloadEpisode={downloadEpisode}
+        />,
+      );
+    });
+    act(() => current.start('ep1'));
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = current.downloadSelected();
+    });
+    act(() => current.cancelCopy());
+    await act(async () => {
+      release([{link: 'https://cdn/video', type: 'mp4'}]);
+      await pending;
+    });
+    expect(downloadEpisode).not.toHaveBeenCalled();
+    expect(current.progress).toBeNull();
+  });
 
   it('copies the selected links in season order as one entry', async () => {
     const fetchStreams = jest.fn(async (link: string) =>

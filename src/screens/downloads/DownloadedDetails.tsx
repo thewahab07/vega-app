@@ -7,7 +7,6 @@ import {useFocusEffect} from '@react-navigation/native';
 import {
   BackHandler,
   Image,
-  Platform,
   ScrollView,
   StatusBar,
   Text,
@@ -18,6 +17,8 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import type {DownloadsStackParamList, RootStackParamList} from '../../App';
 import AppDialog from '../../components/AppDialog';
+import EpisodeListSkeleton from '../../components/EpisodeListSkeleton';
+import {showAppDialog} from '../../lib/zustand/appDialogStore';
 import DropdownField from '../../components/ui/DropdownField';
 import {TVFocusable, TVFocusGuide} from '../../components/tv';
 import {isTV} from '../../lib/tv';
@@ -36,6 +37,7 @@ import useDownloadsStore, {
 import {useShallow} from 'zustand/react/shallow';
 import {useM3Colors} from '../../theme/M3PaletteContext';
 import {useArtworkShape} from '../../lib/hooks/useHomePageData';
+import {useDownloadedTitleValidation} from '../../lib/hooks/useDownloadedTitleValidation';
 import DownloadedEpisodeControls from './components/DownloadedEpisodeControls';
 import DownloadedEpisodeRow from './components/DownloadedEpisodeRow';
 import {deleteDownloadedItemAndSubtitles} from './utils/deleteDownloadedItem';
@@ -132,6 +134,17 @@ const DownloadedDetails = ({navigation, route}: DownloadedDetailsProps) => {
     return list;
   }, [group, selectedSeason, searchText, sortOrder]);
 
+  const seasonRecordIds = useMemo(
+    () => (group?.items || [])
+      .filter(item => getSeasonTitle(item) === selectedSeason)
+      .map(item => item.id),
+    [group, selectedSeason],
+  );
+  const isValidating = useDownloadedTitleValidation(
+    JSON.stringify([route.params.groupId, selectedSeason]),
+    seasonRecordIds,
+  );
+
   // Posters and small images are blurred behind the header, with the sharp
   // poster shown above the title instead of stretched across it. Hooks stay
   // above the early return: the group disappears when its last file is deleted.
@@ -174,7 +187,12 @@ const DownloadedDetails = ({navigation, route}: DownloadedDetailsProps) => {
   );
 
   const playItem = async (item: DownloadItem) => {
-    if (!(await downloadOutputExists(item.filePath))) {
+    const exists = await downloadOutputExists(item.filePath).catch(() => undefined);
+    if (exists === undefined) {
+      showAppDialog({title: 'Unable to check download', message: 'The download folder could not be accessed. Check its permission and try again.', actions: [{label: 'OK'}]});
+      return;
+    }
+    if (!exists) {
       markMissing(item.id);
       return;
     }
@@ -399,14 +417,16 @@ const DownloadedDetails = ({navigation, route}: DownloadedDetailsProps) => {
             style={{color: colors.onBackground}}>
             Ready to watch
           </Text>
-          {items.length === 0 && searchText ? (
+          {!isValidating && items.length === 0 && searchText ? (
             <Text
               className="my-4 text-center text-sm"
               style={{color: colors.onSurfaceVariant}}>
               No downloaded episodes found for "{searchText}"
             </Text>
           ) : null}
-          {items.map((item, index) => (
+          {isValidating ? (
+            <EpisodeListSkeleton downloaded />
+          ) : items.map((item, index) => (
             <DownloadedEpisodeRow
               key={item.id}
               item={item}

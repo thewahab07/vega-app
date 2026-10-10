@@ -24,7 +24,8 @@ import {
   createDownloadDirectoryName,
   createDownloadSeasonDirectoryName,
 } from './downloadId';
-import {getImageAccent} from './imageAccent';
+import {getCachedImageAccent} from './imageAccent';
+import {mixHex} from '../theme/seeds';
 import {formatDownloadProgressLabel} from './downloadFormatting';
 
 const activeDownloads = new Set<string>();
@@ -47,9 +48,13 @@ const getDownloadNotificationColor = (
   if (cached) {
     return cached;
   }
-  const color = getImageAccent(
-    record.background || record.poster,
-    settingsStorage.getPrimaryColor(),
+  const image = record.background || record.poster;
+  const raw = image
+    ? getCachedImageAccent?.('shared-image-accent-v3:' + image)
+    : undefined;
+  // Starting a download must never wait on decorative image/network work.
+  const color = Promise.resolve(
+    raw ? mixHex(raw, '#FFFFFF', 0.35) : settingsStorage.getPrimaryColor(),
   );
   downloadNotificationColors.set(record.id, color);
   return color;
@@ -315,7 +320,12 @@ export const startDownload = async (
     );
     throwIfCancelled();
     subscriptions.push(
-      useDownloadsStore.subscribe(state => {
+      useDownloadsStore.subscribe((state, previousState) => {
+        if (
+          previousState &&
+          state.downloads[downloadId] === previousState.downloads[downloadId]
+        )
+          return;
         const updatedRecord = state.downloads[downloadId];
         if (updatedRecord?.status === 'downloading') {
           showProgressNotification(updatedRecord).catch(() => undefined);
